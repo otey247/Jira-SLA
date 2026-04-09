@@ -540,7 +540,7 @@ function FilterSelect({
 }
 
 function uniqueValues(values: string[]): string[] {
-  return [...new Set(values.filter(Boolean))].sort((left, right) =>
+  return Array.from(new Set(values.filter(Boolean))).sort((left, right) =>
     left.localeCompare(right),
   );
 }

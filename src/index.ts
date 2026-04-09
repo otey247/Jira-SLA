@@ -16,7 +16,6 @@ import {
 } from './functions/getIssueSla';
 import { searchIssueSummaries } from './functions/searchIssueSummaries';
 import { saveRuleSet, saveBusinessCalendar } from './functions/adminFunctions';
-import { syncIssueHistory } from './functions/syncIssueHistory';
 import {
   listRebuildJobs as listRecentRebuildJobs,
   recomputeIssueSla,
