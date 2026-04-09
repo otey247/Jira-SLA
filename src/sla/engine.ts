@@ -247,7 +247,7 @@ function rollUpSummary(
 
     if (seg.segmentType === 'response' && !responseRecorded) {
       responseSeconds += seconds;
-      if (seg.segmentType !== 'response') responseRecorded = true;
+      responseRecorded = true;
     }
     if (seg.segmentType === 'active') {
       activeSeconds += seconds;

@@ -3,6 +3,7 @@ import { invoke } from '@forge/bridge';
 
 interface IssueSummary {
   issueKey: string;
+  ruleSetId: string;
   currentState: string;
   responseSeconds: number;
   activeSeconds: number;
