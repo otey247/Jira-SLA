@@ -1,0 +1,105 @@
+modules:
+  jira:projectPage:
+    - key: sla-reporting-page
+      resource: main
+      resolver:
+        function: ui-resolver
+      title: SLA Analytics
+      layout: basic
+
+  jira:issuePanel:
+    - key: sla-issue-panel
+      resource: issue-panel
+      resolver:
+        function: ui-resolver
+      title: SLA Breakdown
+
+  jira:dashboardGadget:
+    - key: sla-dashboard-gadget
+      resource: gadget
+      resolver:
+        function: ui-resolver
+      title: SLA Metrics
+      description: Visualize SLA metrics, breaches, and assignee performance
+
+  scheduledTrigger:
+    - key: sla-sync-trigger
+      function: scheduled-sync
+      interval: fiveMinute
+
+  action:
+    - key: automation-recompute
+      function: automation-recompute-fn
+      title: Recompute SLA Summary
+      description: Recomputes the SLA summary for the selected issue
+
+    - key: rovo-get-issue-summary
+      function: rovo-get-issue-summary-fn
+      title: Get issue SLA summary
+      description: Returns precomputed SLA summary for a given issue key
+
+    - key: rovo-explain-issue
+      function: rovo-explain-issue-fn
+      title: Explain issue SLA timeline
+      description: Returns a human-readable explanation of the SLA timeline for an issue
+
+    - key: rovo-list-breaches
+      function: rovo-list-breaches-fn
+      title: List breached issues
+      description: Returns a list of issues that have breached their SLA within the given filters
+
+  rovo:agent:
+    - key: sla-agent
+      name: SLA Analyst
+      description: >
+        I help you analyse Jira SLA data. Ask me about response times, active
+        handling durations, SLA breaches, assignee performance, and ticket
+        timeline explanations.
+      prompt: resource:agent-prompt
+      actions:
+        - rovo-get-issue-summary
+        - rovo-explain-issue
+        - rovo-list-breaches
+
+  function:
+    - key: ui-resolver
+      handler: src/index.uiResolver
+    - key: scheduled-sync
+      handler: src/index.scheduledSync
+    - key: automation-recompute-fn
+      handler: src/index.automationRecompute
+    - key: rovo-get-issue-summary-fn
+      handler: src/index.rovoGetIssueSummary
+    - key: rovo-explain-issue-fn
+      handler: src/index.rovoExplainIssue
+    - key: rovo-list-breaches-fn
+      handler: src/index.rovoListBreaches
+
+resources:
+  - key: main
+    path: static/project-page/build
+    tunnel:
+      port: 3000
+  - key: issue-panel
+    path: static/issue-panel/build
+    tunnel:
+      port: 3001
+  - key: gadget
+    path: static/gadget/build
+    tunnel:
+      port: 3002
+  - key: agent-prompt
+    path: resources/agent-prompt.md
+
+app:
+  id: ari:cloud:ecosystem::app/jira-sla-app
+  name: Jira SLA Tracker
+
+permissions:
+  scopes:
+    - read:jira-work
+    - read:jira-user
+    - write:jira-work
+  content:
+    styles:
+      - unsafe-inline
