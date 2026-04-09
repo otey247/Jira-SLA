@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+.forge/
+*.js.map
+static/*/node_modules/
+static/*/build/
+static/*/dist/
+.env
+.env.local
+coverage/
