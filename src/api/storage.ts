@@ -5,6 +5,7 @@ import {
   IssueCheckpoint,
   IssueSlaSegment,
   IssueSummary,
+  RebuildJob,
   RuleSet,
 } from '../sla/types';
 
@@ -27,6 +28,10 @@ const key = {
     ruleSetId ? `issue_segments::${ruleSetId}::` : 'issue_segments::',
   aggregate: (ruleSetId: string, date: string, project: string) =>
     `aggregate_daily::${ruleSetId}::${date}::${project}`,
+  aggregatePrefix: (ruleSetId?: string) =>
+    ruleSetId ? `aggregate_daily::${ruleSetId}::` : 'aggregate_daily::',
+  rebuildJob: (id: string) => `rebuild_job::${id}`,
+  rebuildJobIndex: 'rebuild_job::index',
 };
 
 async function queryByPrefix<T>(prefix: string): Promise<T[]> {
@@ -178,6 +183,10 @@ export async function listSummariesForProject(
   );
 }
 
+export async function listAllSummaries(ruleSetId?: string): Promise<IssueSummary[]> {
+  return queryByPrefix<IssueSummary>(key.summaryPrefix(ruleSetId));
+}
+
 // ─── Daily Aggregates ─────────────────────────────────────────────────────────
 
 export async function saveAggregate(agg: AggregateDaily): Promise<void> {
@@ -193,4 +202,32 @@ export async function getAggregate(
     (await kvs.get<AggregateDaily>(key.aggregate(ruleSetId, date, projectKey))) ??
     null
   );
+}
+
+export async function listAggregatesForProject(
+  projectKey: string,
+  ruleSetId?: string,
+): Promise<AggregateDaily[]> {
+  const aggregates = await queryByPrefix<AggregateDaily>(key.aggregatePrefix(ruleSetId));
+  return aggregates.filter((aggregate) => aggregate.projectKey === projectKey);
+}
+
+// ─── Rebuild Jobs ──────────────────────────────────────────────────────────────
+
+export async function saveRebuildJob(job: RebuildJob): Promise<void> {
+  await kvs.set(key.rebuildJob(job.jobId), job);
+
+  const index: string[] = (await kvs.get<string[]>(key.rebuildJobIndex)) ?? [];
+  const nextIndex = [job.jobId, ...index.filter((id) => id !== job.jobId)].slice(0, 100);
+  await kvs.set(key.rebuildJobIndex, nextIndex);
+}
+
+export async function getRebuildJob(id: string): Promise<RebuildJob | null> {
+  return (await kvs.get<RebuildJob>(key.rebuildJob(id))) ?? null;
+}
+
+export async function listRebuildJobs(): Promise<RebuildJob[]> {
+  const index: string[] = (await kvs.get<string[]>(key.rebuildJobIndex)) ?? [];
+  const results = await Promise.all(index.map((id) => getRebuildJob(id)));
+  return results.filter((job): job is RebuildJob => job !== null);
 }

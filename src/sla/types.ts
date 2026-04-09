@@ -85,6 +85,7 @@ export interface IssueSlaSegment {
   segmentId: string;
   issueKey: string;
   ruleSetId: string;
+  ruleSetVersion: number;
   assigneeAccountId: string | null;
   teamLabel: string | null;
   status: string;
@@ -104,7 +105,9 @@ export interface IssueSlaSegment {
 export interface IssueSummary {
   issueKey: string;
   ruleSetId: string;
+  projectKey: string;
   currentState: SlaState;
+  currentStatus: string;
   responseSeconds: number;
   activeSeconds: number;
   pausedSeconds: number;
@@ -112,7 +115,9 @@ export interface IssueSummary {
   breachState: boolean;
   breachThresholdMinutes: number | null;
   currentAssignee: string | null;
+  currentTeam: string | null;
   currentPriority: string;
+  slaStartedAt: string | null;
   perAssigneeTotals: Record<string, number>;
   perTeamTotals: Record<string, number>;
   lastRecomputedAt: string;
@@ -133,6 +138,32 @@ export interface AggregateDaily {
   avgResponseSeconds: number;
   avgActiveSeconds: number;
   breachCount: number;
+}
+
+export type RebuildScope = 'issue' | 'project-window' | 'scheduled';
+
+export type RebuildJobStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed';
+
+export interface RebuildJob {
+  jobId: string;
+  scope: RebuildScope;
+  status: RebuildJobStatus;
+  projectKey: string | null;
+  issueKey: string | null;
+  ruleSetId: string | null;
+  dateStart: string | null;
+  dateEnd: string | null;
+  requestedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  processedIssueCount: number;
+  errorCount: number;
+  durationMs: number | null;
+  message: string | null;
 }
 
 // ─── Jira API types ──────────────────────────────────────────────────────────

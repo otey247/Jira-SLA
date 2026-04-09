@@ -52,6 +52,7 @@ export function computeIssueSla(
 // ─── Internals ────────────────────────────────────────────────────────────────
 
 interface Boundary {
+  eventId: string | null;
   timestamp: string;
   state: IssueState;
   /** True if SLA clock has started (first ownership event has occurred) */
@@ -157,6 +158,7 @@ function buildBoundaries(
       !ruleSet.activeStatuses.includes(next.status);
 
     boundaries.push({
+      eventId: event.eventId,
       timestamp: event.timestamp,
       state: next,
       slaStarted,
@@ -174,6 +176,7 @@ function buildBoundaries(
 
   // Add a synthetic closing boundary at "now" so the last segment has an end
   boundaries.push({
+    eventId: null,
     timestamp: now,
     state: current,
     slaStarted,
@@ -226,6 +229,7 @@ function emitSegments(
         segmentId: uuidv4(),
         issueKey,
         ruleSetId: ruleSet.ruleSetId,
+        ruleSetVersion: ruleSet.version,
         assigneeAccountId: start.state.assigneeAccountId,
         teamLabel: resolveTeamLabel(start.state.assigneeAccountId, ruleSet),
         status: start.state.status,
@@ -235,8 +239,8 @@ function emitSegments(
         endedAt: end.timestamp,
         rawSeconds,
         businessSeconds,
-        sourceEventStart: null,
-        sourceEventEnd: null,
+        sourceEventStart: start.eventId,
+        sourceEventEnd: end.eventId,
       });
       continue;
     }
@@ -260,6 +264,7 @@ function emitSegments(
         segmentId: uuidv4(),
         issueKey,
         ruleSetId: ruleSet.ruleSetId,
+        ruleSetVersion: ruleSet.version,
         assigneeAccountId: start.state.assigneeAccountId,
         teamLabel: resolveTeamLabel(start.state.assigneeAccountId, ruleSet),
         status: start.state.status,
@@ -269,8 +274,8 @@ function emitSegments(
         endedAt: slice.endedAt,
         rawSeconds: sliceRawSeconds,
         businessSeconds: slice.isBusinessHours ? sliceRawSeconds : 0,
-        sourceEventStart: null,
-        sourceEventEnd: null,
+        sourceEventStart: start.eventId,
+        sourceEventEnd: end.eventId,
       });
     }
   }
@@ -290,6 +295,8 @@ function rollUpSummary(
   now: string,
 ): IssueSummary {
   const lastBoundary = boundaries[boundaries.length - 1];
+  const slaStartedAt = boundaries.find((boundary) => boundary.slaStarted)?.timestamp ?? null;
+  const projectKey = issueKey.split('-')[0] ?? issueKey;
 
   let responseSeconds = 0;
   let activeSeconds = 0;
@@ -352,7 +359,9 @@ function rollUpSummary(
   return {
     issueKey,
     ruleSetId: ruleSet.ruleSetId,
+    projectKey,
     currentState,
+    currentStatus: lastBoundary.state.status,
     responseSeconds,
     activeSeconds,
     pausedSeconds,
@@ -360,7 +369,9 @@ function rollUpSummary(
     breachState,
     breachThresholdMinutes,
     currentAssignee: lastBoundary.state.assigneeAccountId,
+    currentTeam: resolveTeamLabel(lastBoundary.state.assigneeAccountId, ruleSet),
     currentPriority,
+    slaStartedAt,
     perAssigneeTotals,
     perTeamTotals,
     lastRecomputedAt: now,
@@ -418,7 +429,9 @@ function buildEmptySummary(
   return {
     issueKey,
     ruleSetId,
+    projectKey: issueKey.split('-')[0] ?? issueKey,
     currentState: 'paused',
+    currentStatus: '',
     responseSeconds: 0,
     activeSeconds: 0,
     pausedSeconds: 0,
@@ -426,7 +439,9 @@ function buildEmptySummary(
     breachState: false,
     breachThresholdMinutes: null,
     currentAssignee: null,
+    currentTeam: null,
     currentPriority: 'Medium',
+    slaStartedAt: null,
     perAssigneeTotals: {},
     perTeamTotals: {},
     lastRecomputedAt: now,

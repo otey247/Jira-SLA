@@ -7,11 +7,21 @@ import {
   rovoGetIssueSummary as _rovoGetIssueSummary,
   rovoExplainIssue as _rovoExplainIssue,
   rovoListBreaches as _rovoListBreaches,
+  rovoGetAssigneeMetrics as _rovoGetAssigneeMetrics,
 } from './functions/rovoActions';
-import { getIssueSummary, getIssueTimeline } from './functions/getIssueSla';
+import {
+  getIssueSummary,
+  getIssueTimeline,
+  getIssueAudit,
+} from './functions/getIssueSla';
 import { searchIssueSummaries } from './functions/searchIssueSummaries';
 import { saveRuleSet, saveBusinessCalendar } from './functions/adminFunctions';
 import { syncIssueHistory } from './functions/syncIssueHistory';
+import {
+  listRebuildJobs as listRecentRebuildJobs,
+  recomputeIssueSla,
+  recomputeProjectWindow,
+} from './functions/rebuilds';
 import {
   listRuleSets,
   listCalendars,
@@ -38,6 +48,10 @@ resolver.define('getIssueTimeline', async ({ payload }) => {
   return getIssueTimeline(p<{ issueKey: string }>(payload).issueKey);
 });
 
+resolver.define('getIssueAudit', async ({ payload }) => {
+  return getIssueAudit(p<{ issueKey: string }>(payload).issueKey);
+});
+
 // Search / filter summaries
 resolver.define('searchIssueSummaries', async ({ payload }) => {
   return searchIssueSummaries(
@@ -47,30 +61,27 @@ resolver.define('searchIssueSummaries', async ({ payload }) => {
 
 // Manual rebuild
 resolver.define('rebuildIssue', async ({ payload }) => {
-  const { issueKey, ruleSetId } = p<{
-    issueKey: string;
-    ruleSetId?: string;
-  }>(payload);
-  const resolvedRuleSetId =
-    ruleSetId ??
-    listRuleSets()
-      .then((ruleSets) =>
-        ruleSets.find((ruleSet) =>
-          ruleSet.projectKeys.includes(issueKey.split('-')[0]),
-        )?.ruleSetId,
-      );
+  return recomputeIssueSla(
+    p<{
+      issueKey: string;
+      ruleSetId?: string;
+    }>(payload),
+  );
+});
 
-  const finalRuleSetId = await resolvedRuleSetId;
-  if (!finalRuleSetId) {
-    throw new Error(`No rule set found for ${issueKey}.`);
-  }
+resolver.define('recomputeProjectWindow', async ({ payload }) => {
+  return recomputeProjectWindow(
+    p<{
+      projectKey: string;
+      dateStart?: string;
+      dateEnd?: string;
+      ruleSetId?: string;
+    }>(payload),
+  );
+});
 
-  await syncIssueHistory({
-    issueKey,
-    ruleSetId: finalRuleSetId,
-    forceRebuild: true,
-  });
-  return { success: true };
+resolver.define('listRebuildJobs', async () => {
+  return listRecentRebuildJobs();
 });
 
 // Rule Sets
@@ -110,3 +121,4 @@ export const automationRecompute = _automationRecompute;
 export const rovoGetIssueSummary = _rovoGetIssueSummary;
 export const rovoExplainIssue = _rovoExplainIssue;
 export const rovoListBreaches = _rovoListBreaches;
+export const rovoGetAssigneeMetrics = _rovoGetAssigneeMetrics;

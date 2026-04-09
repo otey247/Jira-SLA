@@ -48,6 +48,11 @@ modules:
       title: List breached issues
       description: Returns a list of issues that have breached their SLA within the given filters
 
+    - key: rovo-get-assignee-metrics
+      function: rovo-get-assignee-metrics-fn
+      title: Get assignee SLA metrics
+      description: Returns assignee-level response, handling, and breach metrics
+
   rovo:agent:
     - key: sla-agent
       name: SLA Analyst
@@ -60,6 +65,7 @@ modules:
         - rovo-get-issue-summary
         - rovo-explain-issue
         - rovo-list-breaches
+        - rovo-get-assignee-metrics
 
   function:
     - key: ui-resolver
@@ -74,6 +80,8 @@ modules:
       handler: src/index.rovoExplainIssue
     - key: rovo-list-breaches-fn
       handler: src/index.rovoListBreaches
+    - key: rovo-get-assignee-metrics-fn
+      handler: src/index.rovoGetAssigneeMetrics
 
 resources:
   - key: main
