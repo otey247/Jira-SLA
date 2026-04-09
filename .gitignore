@@ -1,0 +1,4 @@
+node_modules/
+resources/app/
+coverage/
+.vite/

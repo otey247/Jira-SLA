@@ -34,8 +34,8 @@ export const sampleRuleSets: RuleSet[] = [
       {
         priority: 'P1',
         timingMode: '24x7',
-        responseThresholdSeconds: 3600,
-        activeThresholdSeconds: 14400,
+        responseThresholdSeconds: 5400,
+        activeThresholdSeconds: 18000,
       },
     ],
     enabled: true,

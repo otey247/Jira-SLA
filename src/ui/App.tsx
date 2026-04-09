@@ -26,7 +26,7 @@ const detectSurface = async (): Promise<{ surface: SurfaceKind; issueKey?: strin
 
 const textToList = (value: string): string[] => value.split(',').map((item) => item.trim()).filter(Boolean);
 
-export const App = (): JSX.Element => {
+export const App = () => {
   const [data, setData] = useState<BootstrapData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);

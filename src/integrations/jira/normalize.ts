@@ -33,7 +33,7 @@ const toInitialState = (issue: JiraIssueFixture): WorkingState => ({
   teamLabel: issue.fields.initialTeamLabel,
   status: issue.fields.initialStatus,
   priority: issue.fields.initialPriority,
-  resolved: Boolean(issue.fields.resolutionDate),
+  resolved: false,
 });
 
 const toEvent = (historyId: string, created: string, item: JiraHistoryItem): IssueEvent => ({
