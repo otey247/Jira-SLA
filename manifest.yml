@@ -1,0 +1,75 @@
+app:
+  id: jira-sla-analytics
+  runtime:
+    name: nodejs22.x
+
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
+    - read:jira-user
+    - storage:app
+
+modules:
+  jira:projectPage:
+    - key: jira-sla-project-page
+      title: SLA Analytics
+      resource: main
+      resolver:
+        function: ui-resolver
+  jira:issuePanel:
+    - key: jira-sla-issue-panel
+      title: SLA Breakdown
+      resource: main
+      resolver:
+        function: ui-resolver
+  jira:dashboardGadget:
+    - key: jira-sla-dashboard-gadget
+      title: SLA Metrics
+      resource: main
+      resolver:
+        function: ui-resolver
+  scheduledTrigger:
+    - key: jira-sla-scheduled-sync
+      function: scheduled-sync
+      interval: fiveMinute
+  action:
+    - key: jira-sla-automation-recompute
+      title: Recompute SLA data
+      function: automation-recompute
+    - key: jira-sla-rovo-get-summary
+      title: Get issue SLA summary
+      function: rovo-get-summary
+    - key: jira-sla-rovo-explain-issue
+      title: Explain issue SLA timeline
+      function: rovo-explain-issue
+    - key: jira-sla-rovo-list-breaches
+      title: List breached SLA issues
+      function: rovo-list-breaches
+  rovo:agent:
+    - key: jira-sla-agent
+      name: SLA Analyst
+      prompt: resource:agent-prompt
+      actions:
+        - jira-sla-rovo-get-summary
+        - jira-sla-rovo-explain-issue
+        - jira-sla-rovo-list-breaches
+  function:
+    - key: ui-resolver
+      handler: src/functions/index.uiResolver
+    - key: scheduled-sync
+      handler: src/functions/index.scheduledSync
+    - key: automation-recompute
+      handler: src/functions/index.automationRecompute
+    - key: rovo-get-summary
+      handler: src/functions/index.rovoGetIssueSummary
+    - key: rovo-explain-issue
+      handler: src/functions/index.rovoExplainIssue
+    - key: rovo-list-breaches
+      handler: src/functions/index.rovoListBreaches
+
+resources:
+  - key: main
+    path: resources/app
+  - key: agent-prompt
+    path: src/rovo/agent-prompt.txt
