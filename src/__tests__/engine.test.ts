@@ -9,7 +9,6 @@ const MONDAY_10AM = '2024-01-08T10:00:00.000Z';
 const MONDAY_2PM = '2024-01-08T14:00:00.000Z';
 const MONDAY_5PM = '2024-01-08T17:00:00.000Z';
 const TUESDAY_9AM = '2024-01-09T09:00:00.000Z';
-const TUESDAY_11AM = '2024-01-09T11:00:00.000Z';
 
 const defaultCalendar: BusinessCalendar = {
   calendarId: 'cal-1',
@@ -102,7 +101,7 @@ describe('normalizeIssueEvents', () => {
     const events = normalizeIssueEvents(issue, changelog);
     expect(events).toHaveLength(2);
     expect(events[1].eventType).toBe('assignee_changed');
-    expect(events[1].to).toBe('Bob');
+    expect(events[1].to).toBe('assignee-bob');
   });
 
   test('events are sorted chronologically', () => {
@@ -154,7 +153,7 @@ describe('computeIssueSla', () => {
       events,
       defaultRuleSet,
       defaultCalendar,
-      MONDAY_10AM,
+      MONDAY_2PM,
     );
     // 1 hour active, all within business hours (9am–6pm UTC, Mon–Fri)
     expect(summary.activeSeconds).toBeGreaterThan(0);
@@ -269,5 +268,70 @@ describe('computeIssueSla', () => {
       MONDAY_2PM, // 5h window but only 9am–6pm counts
     );
     expect(summary.perAssigneeTotals['assignee-alice']).toBeGreaterThan(0);
+  });
+
+  test('tracks the first owned interval as response time', () => {
+    const issue = makeIssue('assignee-alice', MONDAY_9AM, 'Assigned');
+    const events = normalizeIssueEvents(issue, []);
+
+    const { summary, segments } = computeIssueSla(
+      'PROJ-1',
+      events,
+      defaultRuleSet,
+      defaultCalendar,
+      MONDAY_2PM,
+    );
+
+    expect(summary.responseSeconds).toBeGreaterThan(0);
+    expect(segments.some((segment) => segment.segmentType === 'response')).toBe(true);
+  });
+
+  test('emits outside-hours segments separately from active time', () => {
+    const issue = makeIssue('assignee-alice', MONDAY_5PM, 'In Progress');
+    const events = normalizeIssueEvents(issue, []);
+
+    const { summary, segments } = computeIssueSla(
+      'PROJ-1',
+      events,
+      defaultRuleSet,
+      defaultCalendar,
+      TUESDAY_9AM,
+    );
+
+    expect(summary.outsideHoursSeconds).toBeGreaterThan(0);
+    expect(segments.some((segment) => segment.segmentType === 'outside-hours')).toBe(true);
+  });
+
+  test('treats tickets as waiting after ownership leaves tracked assignees', () => {
+    const issue = makeIssue('assignee-alice', MONDAY_9AM, 'In Progress');
+    const changelog: JiraChangelogEntry[] = [
+      {
+        id: 'cl-2',
+        created: MONDAY_10AM,
+        author: { accountId: 'system', displayName: 'System' },
+        items: [
+          {
+            field: 'assignee',
+            fieldtype: 'jira',
+            from: 'assignee-alice',
+            fromString: 'Alice',
+            to: 'assignee-bob',
+            toString: 'Bob',
+          },
+        ],
+      },
+    ];
+    const events = normalizeIssueEvents(issue, changelog);
+
+    const { summary, segments } = computeIssueSla(
+      'PROJ-1',
+      events,
+      defaultRuleSet,
+      defaultCalendar,
+      MONDAY_2PM,
+    );
+
+    expect(summary.pausedSeconds).toBeGreaterThan(0);
+    expect(segments.some((segment) => segment.segmentType === 'waiting')).toBe(true);
   });
 });

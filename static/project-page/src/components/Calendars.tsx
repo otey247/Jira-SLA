@@ -9,6 +9,7 @@ interface BusinessCalendar {
   workingHoursStart: string;
   workingHoursEnd: string;
   holidayDates: string[];
+  afterHoursMode: 'business-hours' | '24x7';
 }
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -28,7 +29,9 @@ export default function Calendars() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const startNew = () => {
     setEditingId('new');
@@ -39,6 +42,7 @@ export default function Calendars() {
       workingHoursStart: '09:00',
       workingHoursEnd: '18:00',
       holidayDates: [],
+      afterHoursMode: 'business-hours',
     });
   };
 
@@ -48,17 +52,22 @@ export default function Calendars() {
       ...form,
       calendarId: editingId === 'new' ? undefined : editingId,
     })
-      .then(() => { load(); setEditingId(null); })
+      .then(() => {
+        load();
+        setEditingId(null);
+      })
       .catch(console.error)
       .finally(() => setSaving(false));
   };
 
   const toggleDay = (day: number) => {
-    setForm((f) => {
-      const days = f.workingDays ?? [];
+    setForm((current) => {
+      const days = current.workingDays ?? [];
       return {
-        ...f,
-        workingDays: days.includes(day) ? days.filter((d) => d !== day) : [...days, day].sort(),
+        ...current,
+        workingDays: days.includes(day)
+          ? days.filter((value) => value !== day)
+          : [...days, day].sort(),
       };
     });
   };
@@ -78,14 +87,28 @@ export default function Calendars() {
         <h2 style={{ fontSize: '16px' }}>Business Calendars</h2>
         <button
           onClick={startNew}
-          style={{ padding: '8px 16px', background: '#0052cc', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+          style={{
+            padding: '8px 16px',
+            background: '#0052cc',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+          }}
         >
           + New Calendar
         </button>
       </div>
 
       {editingId && (
-        <div style={{ background: '#f4f5f7', padding: '16px', borderRadius: '4px', marginBottom: '24px' }}>
+        <div
+          style={{
+            background: '#f4f5f7',
+            padding: '16px',
+            borderRadius: '4px',
+            marginBottom: '24px',
+          }}
+        >
           <h3 style={{ fontSize: '14px', marginBottom: '12px' }}>
             {editingId === 'new' ? 'New Calendar' : 'Edit Calendar'}
           </h3>
@@ -94,10 +117,20 @@ export default function Calendars() {
             { key: 'timezone', label: 'Timezone (e.g. UTC, Asia/Kolkata)' },
             { key: 'workingHoursStart', label: 'Work Start (HH:MM)' },
             { key: 'workingHoursEnd', label: 'Work End (HH:MM)' },
-            { key: 'holidayDates', label: 'Holiday Dates (comma-separated YYYY-MM-DD)' },
+            {
+              key: 'holidayDates',
+              label: 'Holiday Dates (comma-separated YYYY-MM-DD)',
+            },
           ].map(({ key, label }) => (
             <div key={key} style={{ marginBottom: '10px' }}>
-              <label style={{ display: 'block', fontSize: '12px', color: '#6b778c', marginBottom: '4px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  color: '#6b778c',
+                  marginBottom: '4px',
+                }}
+              >
                 {label}
               </label>
               <input
@@ -108,19 +141,66 @@ export default function Calendars() {
                     : ((form as Record<string, unknown>)[key] as string) ?? ''
                 }
                 onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    [key]: key === 'holidayDates'
-                      ? e.target.value.split(',').map((s) => s.trim()).filter(Boolean)
-                      : e.target.value,
+                  setForm((current) => ({
+                    ...current,
+                    [key]:
+                      key === 'holidayDates'
+                        ? e.target.value
+                            .split(',')
+                            .map((s) => s.trim())
+                            .filter(Boolean)
+                        : e.target.value,
                   }))
                 }
-                style={{ width: '100%', padding: '6px 10px', border: '1px solid #dfe1e6', borderRadius: '4px', fontSize: '13px' }}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  border: '1px solid #dfe1e6',
+                  borderRadius: '4px',
+                  fontSize: '13px',
+                }}
               />
             </div>
           ))}
+          <div style={{ marginBottom: '10px' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '12px',
+                color: '#6b778c',
+                marginBottom: '4px',
+              }}
+            >
+              After-hours Mode
+            </label>
+            <select
+              value={form.afterHoursMode ?? 'business-hours'}
+              onChange={(e) =>
+                setForm((current) => ({
+                  ...current,
+                  afterHoursMode: e.target.value as 'business-hours' | '24x7',
+                }))
+              }
+              style={{
+                width: '100%',
+                padding: '6px 10px',
+                border: '1px solid #dfe1e6',
+                borderRadius: '4px',
+              }}
+            >
+              <option value="business-hours">Business hours only</option>
+              <option value="24x7">24x7</option>
+            </select>
+          </div>
           <div style={{ marginBottom: '12px' }}>
-            <label style={{ display: 'block', fontSize: '12px', color: '#6b778c', marginBottom: '4px' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '12px',
+                color: '#6b778c',
+                marginBottom: '4px',
+              }}
+            >
               Working Days
             </label>
             <div style={{ display: 'flex', gap: '6px' }}>
@@ -132,7 +212,9 @@ export default function Calendars() {
                     padding: '4px 10px',
                     borderRadius: '4px',
                     border: '1px solid #dfe1e6',
-                    background: (form.workingDays ?? []).includes(idx) ? '#0052cc' : '#fff',
+                    background: (form.workingDays ?? []).includes(idx)
+                      ? '#0052cc'
+                      : '#fff',
                     color: (form.workingDays ?? []).includes(idx) ? '#fff' : '#333',
                     cursor: 'pointer',
                   }}
@@ -146,13 +228,26 @@ export default function Calendars() {
             <button
               onClick={handleSave}
               disabled={saving}
-              style={{ padding: '8px 16px', background: '#0052cc', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+              style={{
+                padding: '8px 16px',
+                background: '#0052cc',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
             <button
               onClick={() => setEditingId(null)}
-              style={{ padding: '8px 16px', background: '#fff', border: '1px solid #dfe1e6', borderRadius: '4px', cursor: 'pointer' }}
+              style={{
+                padding: '8px 16px',
+                background: '#fff',
+                border: '1px solid #dfe1e6',
+                borderRadius: '4px',
+                cursor: 'pointer',
+              }}
             >
               Cancel
             </button>
@@ -170,6 +265,7 @@ export default function Calendars() {
               <th style={th}>Timezone</th>
               <th style={th}>Working Days</th>
               <th style={th}>Hours</th>
+              <th style={th}>After Hours</th>
               <th style={th}>Holidays</th>
               <th style={th}>Actions</th>
             </tr>
@@ -180,10 +276,19 @@ export default function Calendars() {
                 <td style={td}>{cal.name}</td>
                 <td style={td}>{cal.timezone}</td>
                 <td style={td}>{cal.workingDays.map((d) => DAY_NAMES[d]).join(', ')}</td>
-                <td style={td}>{cal.workingHoursStart} – {cal.workingHoursEnd}</td>
+                <td style={td}>
+                  {cal.workingHoursStart} – {cal.workingHoursEnd}
+                </td>
+                <td style={td}>{cal.afterHoursMode}</td>
                 <td style={td}>{cal.holidayDates.length} days</td>
                 <td style={td}>
-                  <button onClick={() => { setEditingId(cal.calendarId); setForm(cal); }} style={{ cursor: 'pointer' }}>
+                  <button
+                    onClick={() => {
+                      setEditingId(cal.calendarId);
+                      setForm(cal);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
                     Edit
                   </button>
                 </td>
@@ -196,5 +301,12 @@ export default function Calendars() {
   );
 }
 
-const th: React.CSSProperties = { padding: '8px 12px', textAlign: 'left', fontWeight: 600, fontSize: '12px', color: '#6b778c' };
+const th: React.CSSProperties = {
+  padding: '8px 12px',
+  textAlign: 'left',
+  fontWeight: 600,
+  fontSize: '12px',
+  color: '#6b778c',
+};
+
 const td: React.CSSProperties = { padding: '8px 12px' };

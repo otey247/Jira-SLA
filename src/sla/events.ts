@@ -52,12 +52,17 @@ export function normalizeIssueEvents(
       }
 
       if (eventType) {
+        const from =
+          eventType === 'assignee_changed' ? item.from : item.fromString;
+        const to =
+          eventType === 'assignee_changed' ? item.to : item.toString;
+
         events.push({
           eventId: entry.id + '_' + field,
           eventType,
           timestamp: entry.created,
-          from: item.fromString,
-          to: item.toString,
+          from,
+          to,
         });
       }
     }

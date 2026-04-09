@@ -123,6 +123,7 @@ export interface IssueSummary {
  * Optional daily aggregate cache for dashboard queries.
  */
 export interface AggregateDaily {
+  ruleSetId: string;
   date: string; // "YYYY-MM-DD"
   projectKey: string;
   assigneeAccountId: string | null;

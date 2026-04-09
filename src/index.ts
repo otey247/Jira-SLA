@@ -47,8 +47,29 @@ resolver.define('searchIssueSummaries', async ({ payload }) => {
 
 // Manual rebuild
 resolver.define('rebuildIssue', async ({ payload }) => {
-  const { issueKey, ruleSetId } = p<{ issueKey: string; ruleSetId: string }>(payload);
-  await syncIssueHistory({ issueKey, ruleSetId, forceRebuild: true });
+  const { issueKey, ruleSetId } = p<{
+    issueKey: string;
+    ruleSetId?: string;
+  }>(payload);
+  const resolvedRuleSetId =
+    ruleSetId ??
+    listRuleSets()
+      .then((ruleSets) =>
+        ruleSets.find((ruleSet) =>
+          ruleSet.projectKeys.includes(issueKey.split('-')[0]),
+        )?.ruleSetId,
+      );
+
+  const finalRuleSetId = await resolvedRuleSetId;
+  if (!finalRuleSetId) {
+    throw new Error(`No rule set found for ${issueKey}.`);
+  }
+
+  await syncIssueHistory({
+    issueKey,
+    ruleSetId: finalRuleSetId,
+    forceRebuild: true,
+  });
   return { success: true };
 });
 

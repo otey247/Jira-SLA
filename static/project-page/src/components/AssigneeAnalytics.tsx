@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { invoke } from '@forge/bridge';
+import { invoke, view } from '@forge/bridge';
 
 interface IssueSummary {
   issueKey: string;
@@ -27,27 +27,36 @@ export default function AssigneeAnalytics() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const projectKey =
-      (window as unknown as { __FORGE_PROJECT_KEY__?: string }).__FORGE_PROJECT_KEY__ ?? '';
-    if (!projectKey) { setLoading(false); return; }
+    view
+      .getContext()
+      .then((ctx) => {
+        const projectKey =
+          (
+            ctx as unknown as {
+              extension?: { project?: { key?: string } };
+            }
+          ).extension?.project?.key ?? '';
 
-    invoke<IssueSummary[]>('searchIssueSummaries', { projectKey })
-      .then((summaries) => {
-        const map = new Map<string, AssigneeRow>();
-        for (const s of summaries ?? []) {
-          const id = s.currentAssignee ?? 'unassigned';
-          const existing = map.get(id) ?? {
-            accountId: id,
-            totalActive: 0,
-            issueCount: 0,
-            breachCount: 0,
-          };
-          existing.totalActive += s.activeSeconds;
-          existing.issueCount += 1;
-          if (s.breachState) existing.breachCount += 1;
-          map.set(id, existing);
-        }
-        setRows([...map.values()].sort((a, b) => b.totalActive - a.totalActive));
+        if (!projectKey) return;
+
+        return invoke<IssueSummary[]>('searchIssueSummaries', { projectKey })
+          .then((summaries) => {
+            const map = new Map<string, AssigneeRow>();
+            for (const s of summaries ?? []) {
+              const id = s.currentAssignee ?? 'unassigned';
+              const existing = map.get(id) ?? {
+                accountId: id,
+                totalActive: 0,
+                issueCount: 0,
+                breachCount: 0,
+              };
+              existing.totalActive += s.activeSeconds;
+              existing.issueCount += 1;
+              if (s.breachState) existing.breachCount += 1;
+              map.set(id, existing);
+            }
+            setRows([...map.values()].sort((a, b) => b.totalActive - a.totalActive));
+          });
       })
       .catch(console.error)
       .finally(() => setLoading(false));

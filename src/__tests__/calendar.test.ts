@@ -1,4 +1,8 @@
-import { computeBusinessSeconds, isWithinBusinessHours } from '../sla/calendar';
+import {
+  computeBusinessSeconds,
+  isWithinBusinessHours,
+  splitIntervalByBusinessHours,
+} from '../sla/calendar';
 import { BusinessCalendar } from '../sla/types';
 
 const utcCalendar: BusinessCalendar = {
@@ -91,6 +95,42 @@ describe('computeBusinessSeconds', () => {
       utcCalendar,
     );
     expect(seconds).toBe(1800);
+  });
+
+  test('splits intervals into business and outside-hours slices', () => {
+    const slices = splitIntervalByBusinessHours(
+      '2024-01-08T08:00:00Z',
+      '2024-01-08T10:00:00Z',
+      utcCalendar,
+    );
+
+    expect(slices).toEqual([
+      {
+        startedAt: '2024-01-08T08:00:00.000Z',
+        endedAt: '2024-01-08T09:00:00.000Z',
+        isBusinessHours: false,
+      },
+      {
+        startedAt: '2024-01-08T09:00:00.000Z',
+        endedAt: '2024-01-08T10:00:00.000Z',
+        isBusinessHours: true,
+      },
+    ]);
+  });
+
+  test('handles DST transitions by recalculating timezone offsets per day', () => {
+    const newYorkCalendar: BusinessCalendar = {
+      ...utcCalendar,
+      timezone: 'America/New_York',
+    };
+
+    const seconds = computeBusinessSeconds(
+      '2024-03-08T14:00:00Z',
+      '2024-03-11T15:00:00Z',
+      newYorkCalendar,
+    );
+
+    expect(seconds).toBe(39600);
   });
 });
 

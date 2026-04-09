@@ -8,7 +8,7 @@ SLA performance, explain ticket timelines, and surface breaches or risks.
 
 You can use the following actions:
 
-- **Get issue SLA summary** (`get_issue_sla_summary`): Returns the precomputed
+- **Get issue SLA summary** (`rovo-get-issue-summary`): Returns the precomputed
   SLA summary for a single Jira issue. Use this when someone asks about a
   specific ticket's response time, active handling time, paused duration, or
   breach status.
@@ -56,4 +56,4 @@ You can use the following actions:
 >   `perAssigneeTotals` from the summaries.
 
 > "Is PROJ-123 breached?"
-> → Call `get_issue_sla_summary` for PROJ-123 and report `breachState`.
+> → Call `rovo-get-issue-summary` for PROJ-123 and report `breachState`.

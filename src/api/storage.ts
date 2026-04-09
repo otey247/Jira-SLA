@@ -1,4 +1,4 @@
-import { kvs } from '@forge/kvs';
+import { kvs, WhereConditions } from '@forge/kvs';
 import {
   AggregateDaily,
   BusinessCalendar,
@@ -15,13 +15,41 @@ const key = {
   ruleSetIndex: 'rule_set::index',
   calendar: (id: string) => `business_calendar::${id}`,
   calendarIndex: 'business_calendar::index',
-  checkpoint: (issueKey: string) => `issue_checkpoint::${issueKey}`,
-  segments: (issueKey: string) => `issue_segments::${issueKey}`,
-  summary: (issueKey: string) => `issue_summary::${issueKey}`,
-  summaryIndex: (projectKey: string) => `issue_summary_index::${projectKey}`,
-  aggregate: (date: string, project: string) =>
-    `aggregate_daily::${date}::${project}`,
+  checkpoint: (ruleSetId: string, issueKey: string) =>
+    `issue_checkpoint::${ruleSetId}::${issueKey}`,
+  segments: (ruleSetId: string, issueKey: string) =>
+    `issue_segments::${ruleSetId}::${issueKey}`,
+  summary: (ruleSetId: string, issueKey: string) =>
+    `issue_summary::${ruleSetId}::${issueKey}`,
+  summaryPrefix: (ruleSetId?: string) =>
+    ruleSetId ? `issue_summary::${ruleSetId}::` : 'issue_summary::',
+  segmentsPrefix: (ruleSetId?: string) =>
+    ruleSetId ? `issue_segments::${ruleSetId}::` : 'issue_segments::',
+  aggregate: (ruleSetId: string, date: string, project: string) =>
+    `aggregate_daily::${ruleSetId}::${date}::${project}`,
 };
+
+async function queryByPrefix<T>(prefix: string): Promise<T[]> {
+  const results: T[] = [];
+  let cursor: string | undefined;
+
+  do {
+    let query = kvs
+      .query()
+      .where('key', WhereConditions.beginsWith(prefix))
+      .limit(100);
+
+    if (cursor) {
+      query = query.cursor(cursor);
+    }
+
+    const page = await query.getMany<T>();
+    results.push(...page.results.map((result) => result.value));
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  return results;
+}
 
 // ─── Rule Sets ────────────────────────────────────────────────────────────────
 
@@ -79,70 +107,90 @@ export async function listCalendars(): Promise<BusinessCalendar[]> {
 // ─── Issue Checkpoints ────────────────────────────────────────────────────────
 
 export async function saveCheckpoint(cp: IssueCheckpoint): Promise<void> {
-  await kvs.set(key.checkpoint(cp.issueKey), cp);
+  await kvs.set(key.checkpoint(cp.ruleSetId, cp.issueKey), cp);
 }
 
 export async function getCheckpoint(
+  ruleSetId: string,
   issueKey: string,
 ): Promise<IssueCheckpoint | null> {
-  return (await kvs.get<IssueCheckpoint>(key.checkpoint(issueKey))) ?? null;
+  return (
+    (await kvs.get<IssueCheckpoint>(key.checkpoint(ruleSetId, issueKey))) ?? null
+  );
 }
 
 // ─── Issue SLA Segments ───────────────────────────────────────────────────────
 
 export async function saveSegments(
+  ruleSetId: string,
   issueKey: string,
   segments: IssueSlaSegment[],
 ): Promise<void> {
-  await kvs.set(key.segments(issueKey), segments);
+  await kvs.set(key.segments(ruleSetId, issueKey), segments);
 }
 
 export async function getSegments(
   issueKey: string,
+  ruleSetId?: string,
 ): Promise<IssueSlaSegment[]> {
-  return (await kvs.get<IssueSlaSegment[]>(key.segments(issueKey))) ?? [];
+  if (ruleSetId) {
+    return (
+      (await kvs.get<IssueSlaSegment[]>(key.segments(ruleSetId, issueKey))) ?? []
+    );
+  }
+
+  const allSegments = await queryByPrefix<IssueSlaSegment[]>(
+    key.segmentsPrefix(),
+  );
+
+  return allSegments.find((segments) =>
+    segments.some((segment) => segment.issueKey === issueKey),
+  ) ?? [];
 }
 
 // ─── Issue SLA Summaries ──────────────────────────────────────────────────────
 
 export async function saveSummary(summary: IssueSummary): Promise<void> {
-  await kvs.set(key.summary(summary.issueKey), summary);
-
-  // Maintain a per-project index of issue keys
-  const projectKey = summary.issueKey.split('-')[0];
-  const index: string[] =
-    (await kvs.get<string[]>(key.summaryIndex(projectKey))) ?? [];
-
-  if (!index.includes(summary.issueKey)) {
-    index.push(summary.issueKey);
-    await kvs.set(key.summaryIndex(projectKey), index);
-  }
+  await kvs.set(key.summary(summary.ruleSetId, summary.issueKey), summary);
 }
 
 export async function getSummary(
   issueKey: string,
+  ruleSetId?: string,
 ): Promise<IssueSummary | null> {
-  return (await kvs.get<IssueSummary>(key.summary(issueKey))) ?? null;
+  if (ruleSetId) {
+    return (
+      (await kvs.get<IssueSummary>(key.summary(ruleSetId, issueKey))) ?? null
+    );
+  }
+
+  const allSummaries = await queryByPrefix<IssueSummary>(key.summaryPrefix());
+  return allSummaries.find((summary) => summary.issueKey === issueKey) ?? null;
 }
 
 export async function listSummariesForProject(
   projectKey: string,
+  ruleSetId?: string,
 ): Promise<IssueSummary[]> {
-  const index: string[] =
-    (await kvs.get<string[]>(key.summaryIndex(projectKey))) ?? [];
-  const results = await Promise.all(index.map((k) => getSummary(k)));
-  return results.filter((s): s is IssueSummary => s !== null);
+  const summaries = await queryByPrefix<IssueSummary>(key.summaryPrefix(ruleSetId));
+  return summaries.filter((summary) =>
+    summary.issueKey.startsWith(`${projectKey}-`),
+  );
 }
 
 // ─── Daily Aggregates ─────────────────────────────────────────────────────────
 
 export async function saveAggregate(agg: AggregateDaily): Promise<void> {
-  await kvs.set(key.aggregate(agg.date, agg.projectKey), agg);
+  await kvs.set(key.aggregate(agg.ruleSetId, agg.date, agg.projectKey), agg);
 }
 
 export async function getAggregate(
+  ruleSetId: string,
   date: string,
   projectKey: string,
 ): Promise<AggregateDaily | null> {
-  return (await kvs.get<AggregateDaily>(key.aggregate(date, projectKey))) ?? null;
+  return (
+    (await kvs.get<AggregateDaily>(key.aggregate(ruleSetId, date, projectKey))) ??
+    null
+  );
 }

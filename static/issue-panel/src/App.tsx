@@ -14,6 +14,7 @@ interface IssueSlaSegment {
 
 interface IssueSummary {
   issueKey: string;
+  ruleSetId: string;
   currentState: string;
   responseSeconds: number;
   activeSeconds: number;
@@ -98,7 +99,7 @@ export default function App() {
   const handleRebuild = () => {
     if (!issueKey || !detail) return;
     setRebuilding(true);
-    invoke('rebuildIssue', { issueKey, ruleSetId: '' })
+    invoke('rebuildIssue', { issueKey, ruleSetId: detail.summary.ruleSetId })
       .then(() =>
         invoke<Detail | null>('getIssueTimeline', { issueKey }).then((d) => {
           if (d) setDetail(d);

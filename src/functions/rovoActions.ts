@@ -1,4 +1,4 @@
-import { getSummary, getSegments } from '../api/storage';
+import { getSummary, getSegments, listSummariesForProject } from '../api/storage';
 import { IssueSummary, IssueSlaSegment } from '../sla/types';
 
 // ─── Rovo action: get_issue_sla_summary ──────────────────────────────────────
@@ -64,8 +64,6 @@ export async function rovoExplainIssue(payload: {
 }
 
 // ─── Rovo action: list_breached_issues ───────────────────────────────────────
-
-import { listSummariesForProject } from '../api/storage';
 
 export async function rovoListBreaches(payload: {
   projectKey: string;

@@ -102,4 +102,4 @@ permissions:
     - write:jira-work
   content:
     styles:
-      - unsafe
+      - unsafe-inline

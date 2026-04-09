@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { invoke } from '@forge/bridge';
+import { invoke, view } from '@forge/bridge';
 
 interface IssueSummary {
   issueKey: string;
@@ -93,13 +93,26 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const projectKey =
-      (window as unknown as { __FORGE_PROJECT_KEY__?: string }).__FORGE_PROJECT_KEY__ ?? '';
-    if (!projectKey) { setLoading(false); return; }
+    view
+      .getContext()
+      .then((ctx) => {
+        const extension = (
+          ctx as unknown as {
+            extension?: {
+              project?: { key?: string };
+              gadgetConfiguration?: { projectKey?: string };
+            };
+          }
+        ).extension;
+        const projectKey =
+          extension?.project?.key ?? extension?.gadgetConfiguration?.projectKey ?? '';
 
-    invoke<IssueSummary[]>('searchIssueSummaries', { projectKey })
-      .then((summaries) => {
-        setState(computeState(summaries ?? []));
+        if (!projectKey) return;
+
+        return invoke<IssueSummary[]>('searchIssueSummaries', { projectKey })
+          .then((summaries) => {
+            setState(computeState(summaries ?? []));
+          });
       })
       .catch(console.error)
       .finally(() => setLoading(false));

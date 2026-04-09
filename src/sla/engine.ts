@@ -9,7 +9,7 @@ import {
   SegmentType,
   SlaState,
 } from './types';
-import { computeBusinessSeconds } from './calendar';
+import { computeBusinessSeconds, splitIntervalByBusinessHours } from './calendar';
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -60,6 +60,8 @@ interface Boundary {
   ownedByTeam: boolean;
   /** True if a stop condition has been reached */
   stopped: boolean;
+  /** True when this interval represents the initial response window */
+  responseDue: boolean;
 }
 
 /**
@@ -81,6 +83,7 @@ function buildBoundaries(
   };
 
   let slaStarted = false;
+  let responseDue = false;
 
   for (const event of events) {
     // Apply the event to derive the new state
@@ -122,21 +125,36 @@ function buildBoundaries(
 
     const ownedByTeam = isOwnedByTeam(next, ruleSet);
 
+    let justStartedSla = false;
+
     // Determine if the SLA clock should start
     if (!slaStarted) {
       if (ruleSet.startMode === 'assignment' && ownedByTeam) {
         slaStarted = true;
+        justStartedSla = true;
       } else if (
         ruleSet.startMode === 'status' &&
         ruleSet.activeStatuses.includes(next.status)
       ) {
         slaStarted = true;
+        justStartedSla = true;
       }
+    }
+
+    if (justStartedSla) {
+      responseDue = true;
     }
 
     const stopped =
       next.resolved ||
       (next.status !== '' && ruleSet.stoppedStatuses.includes(next.status));
+
+    const responseBoundary =
+      responseDue &&
+      ownedByTeam &&
+      !stopped &&
+      !ruleSet.pausedStatuses.includes(next.status) &&
+      !ruleSet.activeStatuses.includes(next.status);
 
     boundaries.push({
       timestamp: event.timestamp,
@@ -144,7 +162,12 @@ function buildBoundaries(
       slaStarted,
       ownedByTeam,
       stopped,
+      responseDue: responseBoundary,
     });
+
+    if (responseBoundary) {
+      responseDue = false;
+    }
 
     current = next;
   }
@@ -158,6 +181,7 @@ function buildBoundaries(
     stopped:
       current.resolved ||
       (current.status !== '' && ruleSet.stoppedStatuses.includes(current.status)),
+    responseDue: false,
   });
 
   return boundaries;
@@ -193,26 +217,62 @@ function emitSegments(
     const priorityOverride = ruleSet.priorityOverrides[start.state.priority];
     const is24x7 = priorityOverride?.mode === '24x7';
 
-    const businessSeconds = is24x7
-      ? rawSeconds
-      : computeBusinessSeconds(start.timestamp, end.timestamp, calendar);
+    if (is24x7 || !['active', 'response'].includes(segmentType)) {
+      const businessSeconds = is24x7
+        ? rawSeconds
+        : computeBusinessSeconds(start.timestamp, end.timestamp, calendar);
 
-    segments.push({
-      segmentId: uuidv4(),
-      issueKey,
-      ruleSetId: ruleSet.ruleSetId,
-      assigneeAccountId: start.state.assigneeAccountId,
-      teamLabel: resolveTeamLabel(start.state.assigneeAccountId, ruleSet),
-      status: start.state.status,
-      priority: start.state.priority,
-      segmentType,
-      startedAt: start.timestamp,
-      endedAt: end.timestamp,
-      rawSeconds,
-      businessSeconds,
-      sourceEventStart: null,
-      sourceEventEnd: null,
-    });
+      segments.push({
+        segmentId: uuidv4(),
+        issueKey,
+        ruleSetId: ruleSet.ruleSetId,
+        assigneeAccountId: start.state.assigneeAccountId,
+        teamLabel: resolveTeamLabel(start.state.assigneeAccountId, ruleSet),
+        status: start.state.status,
+        priority: start.state.priority,
+        segmentType,
+        startedAt: start.timestamp,
+        endedAt: end.timestamp,
+        rawSeconds,
+        businessSeconds,
+        sourceEventStart: null,
+        sourceEventEnd: null,
+      });
+      continue;
+    }
+
+    const slices = splitIntervalByBusinessHours(
+      start.timestamp,
+      end.timestamp,
+      calendar,
+    );
+
+    for (const slice of slices) {
+      const sliceRawSeconds = Math.max(
+        0,
+        (new Date(slice.endedAt).getTime() - new Date(slice.startedAt).getTime()) /
+          1000,
+      );
+
+      if (sliceRawSeconds === 0) continue;
+
+      segments.push({
+        segmentId: uuidv4(),
+        issueKey,
+        ruleSetId: ruleSet.ruleSetId,
+        assigneeAccountId: start.state.assigneeAccountId,
+        teamLabel: resolveTeamLabel(start.state.assigneeAccountId, ruleSet),
+        status: start.state.status,
+        priority: start.state.priority,
+        segmentType: slice.isBusinessHours ? segmentType : 'outside-hours',
+        startedAt: slice.startedAt,
+        endedAt: slice.endedAt,
+        rawSeconds: sliceRawSeconds,
+        businessSeconds: slice.isBusinessHours ? sliceRawSeconds : 0,
+        sourceEventStart: null,
+        sourceEventEnd: null,
+      });
+    }
   }
 
   return segments;
@@ -239,15 +299,11 @@ function rollUpSummary(
   const perAssigneeTotals: Record<string, number> = {};
   const perTeamTotals: Record<string, number> = {};
 
-  // Track whether we have already counted the first response
-  let responseRecorded = false;
-
   for (const seg of segments) {
     const seconds = seg.businessSeconds;
 
-    if (seg.segmentType === 'response' && !responseRecorded) {
+    if (seg.segmentType === 'response') {
       responseSeconds += seconds;
-      responseRecorded = true;
     }
     if (seg.segmentType === 'active') {
       activeSeconds += seconds;
@@ -256,7 +312,7 @@ function rollUpSummary(
       pausedSeconds += seconds;
     }
     if (seg.segmentType === 'outside-hours') {
-      outsideHoursSeconds += seconds;
+      outsideHoursSeconds += seg.rawSeconds;
     }
 
     // Per-assignee accumulation (active segments only)
@@ -316,9 +372,14 @@ function rollUpSummary(
 
 function isOwnedByTeam(state: IssueState, ruleSet: RuleSet): boolean {
   if (!state.assigneeAccountId) return false;
+
+  if (ruleSet.trackedAssigneeAccountIds.includes(state.assigneeAccountId)) {
+    return true;
+  }
+
   return (
-    ruleSet.trackedAssigneeAccountIds.includes(state.assigneeAccountId) ||
-    ruleSet.teamIds.length === 0 // if no team filter, any assignee counts
+    ruleSet.teamIds.length === 0 &&
+    ruleSet.trackedAssigneeAccountIds.length === 0
   );
 }
 
@@ -335,6 +396,7 @@ function resolveTeamLabel(
 
 function classifySegment(boundary: Boundary, ruleSet: RuleSet): SegmentType {
   if (boundary.stopped) return 'stopped';
+  if (boundary.responseDue) return 'response';
 
   const { status } = boundary.state;
 

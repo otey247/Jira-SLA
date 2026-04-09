@@ -31,8 +31,9 @@ export async function fetchChangelog(
   const entries: JiraChangelogEntry[] = [];
   let startAt = 0;
   const maxResults = 100;
+  let hasMore = true;
 
-  while (true) {
+  while (hasMore) {
     const response = await api
       .asApp()
       .requestJira(
@@ -53,12 +54,16 @@ export async function fetchChangelog(
 
     for (const entry of data.values) {
       // If afterId is supplied, skip entries we have already processed
-      if (afterId && entry.id <= afterId) continue;
+      if (afterId && !isChangelogEntryNewer(entry.id, afterId)) {
+        continue;
+      }
       entries.push(entry);
     }
 
-    if (data.isLast || startAt + maxResults >= data.total) break;
-    startAt += maxResults;
+    hasMore = !(data.isLast || startAt + maxResults >= data.total);
+    if (hasMore) {
+      startAt += maxResults;
+    }
   }
 
   return entries;
@@ -90,8 +95,9 @@ export async function searchIssues(
 ): Promise<JiraIssue[]> {
   const issues: JiraIssue[] = [];
   let startAt = 0;
+  let hasMore = true;
 
-  while (true) {
+  while (hasMore) {
     const body = { jql, fields: fields.split(','), startAt, maxResults };
 
     const response = await api.asApp().requestJira(route`/rest/api/3/search`, {
@@ -111,9 +117,25 @@ export async function searchIssues(
 
     issues.push(...data.issues);
 
-    if (issues.length >= data.total || data.issues.length === 0) break;
-    startAt += maxResults;
+    hasMore = !(issues.length >= data.total || data.issues.length === 0);
+    if (hasMore) {
+      startAt += maxResults;
+    }
   }
 
   return issues;
+}
+
+function isChangelogEntryNewer(
+  entryId: string,
+  afterId: string,
+): boolean {
+  const entryNumericId = Number(entryId);
+  const afterNumericId = Number(afterId);
+
+  if (Number.isFinite(entryNumericId) && Number.isFinite(afterNumericId)) {
+    return entryNumericId > afterNumericId;
+  }
+
+  return entryId > afterId;
 }

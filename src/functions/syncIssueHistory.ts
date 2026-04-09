@@ -26,7 +26,7 @@ export async function syncIssueHistory(opts: SyncIssueOptions): Promise<void> {
 
   const [ruleSet, checkpoint] = await Promise.all([
     getRuleSet(ruleSetId),
-    getCheckpoint(issueKey),
+    getCheckpoint(ruleSetId, issueKey),
   ]);
 
   if (!ruleSet) {
@@ -83,7 +83,7 @@ export async function syncIssueHistory(opts: SyncIssueOptions): Promise<void> {
 
   // Persist atomically (best-effort; Forge KVS does not guarantee XA)
   await Promise.all([
-    saveSegments(issueKey, segments),
+    saveSegments(ruleSetId, issueKey, segments),
     saveSummary(summary),
     saveCheckpoint(updatedCheckpoint),
   ]);
