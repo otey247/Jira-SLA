@@ -4,6 +4,13 @@ Forge-native Jira SLA tracking app that uses Jira issue history as the source of
 truth, computes deterministic SLA segments in app code, and exposes the
 precomputed results through Custom UI surfaces and Rovo actions.
 
+## Installation
+
+See the installation guides:
+
+- [docs/installation-guide.md](docs/installation-guide.md)
+- [docs/customer-installation-guide.md](docs/customer-installation-guide.md)
+
 ## App surfaces
 
 - **Jira project page** – KPI cards, issue explorer, assignee analytics, rule
