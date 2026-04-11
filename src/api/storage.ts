@@ -26,12 +26,14 @@ const key = {
     ruleSetId ? `issue_summary::${ruleSetId}::` : 'issue_summary::',
   segmentsPrefix: (ruleSetId?: string) =>
     ruleSetId ? `issue_segments::${ruleSetId}::` : 'issue_segments::',
-  aggregate: (ruleSetId: string, date: string, project: string) =>
-    `aggregate_daily::${ruleSetId}::${date}::${project}`,
-  aggregatePrefix: (ruleSetId?: string) =>
-    ruleSetId ? `aggregate_daily::${ruleSetId}::` : 'aggregate_daily::',
+  aggregate: (project: string, ruleSetId: string, date: string) =>
+    `aggregate_daily::${project}::${ruleSetId}::${date}`,
+  aggregatePrefix: (project: string, ruleSetId?: string) =>
+    ruleSetId
+      ? `aggregate_daily::${project}::${ruleSetId}::`
+      : `aggregate_daily::${project}::`,
   rebuildJob: (id: string) => `rebuild_job::${id}`,
-  rebuildJobIndex: 'rebuild_job::index',
+  rebuildJobPrefix: 'rebuild_job::',
 };
 
 async function queryByPrefix<T>(prefix: string): Promise<T[]> {
@@ -190,7 +192,7 @@ export async function listAllSummaries(ruleSetId?: string): Promise<IssueSummary
 // ─── Daily Aggregates ─────────────────────────────────────────────────────────
 
 export async function saveAggregate(agg: AggregateDaily): Promise<void> {
-  await kvs.set(key.aggregate(agg.ruleSetId, agg.date, agg.projectKey), agg);
+  await kvs.set(key.aggregate(agg.projectKey, agg.ruleSetId, agg.date), agg);
 }
 
 export async function getAggregate(
@@ -199,7 +201,7 @@ export async function getAggregate(
   projectKey: string,
 ): Promise<AggregateDaily | null> {
   return (
-    (await kvs.get<AggregateDaily>(key.aggregate(ruleSetId, date, projectKey))) ??
+    (await kvs.get<AggregateDaily>(key.aggregate(projectKey, ruleSetId, date))) ??
     null
   );
 }
@@ -208,18 +210,13 @@ export async function listAggregatesForProject(
   projectKey: string,
   ruleSetId?: string,
 ): Promise<AggregateDaily[]> {
-  const aggregates = await queryByPrefix<AggregateDaily>(key.aggregatePrefix(ruleSetId));
-  return aggregates.filter((aggregate) => aggregate.projectKey === projectKey);
+  return queryByPrefix<AggregateDaily>(key.aggregatePrefix(projectKey, ruleSetId));
 }
 
 // ─── Rebuild Jobs ──────────────────────────────────────────────────────────────
 
 export async function saveRebuildJob(job: RebuildJob): Promise<void> {
   await kvs.set(key.rebuildJob(job.jobId), job);
-
-  const index: string[] = (await kvs.get<string[]>(key.rebuildJobIndex)) ?? [];
-  const nextIndex = [job.jobId, ...index.filter((id) => id !== job.jobId)].slice(0, 100);
-  await kvs.set(key.rebuildJobIndex, nextIndex);
 }
 
 export async function getRebuildJob(id: string): Promise<RebuildJob | null> {
@@ -227,7 +224,8 @@ export async function getRebuildJob(id: string): Promise<RebuildJob | null> {
 }
 
 export async function listRebuildJobs(): Promise<RebuildJob[]> {
-  const index: string[] = (await kvs.get<string[]>(key.rebuildJobIndex)) ?? [];
-  const results = await Promise.all(index.map((id) => getRebuildJob(id)));
-  return results.filter((job): job is RebuildJob => job !== null);
+  const jobs = await queryByPrefix<RebuildJob>(key.rebuildJobPrefix);
+  return jobs
+    .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt))
+    .slice(0, 100);
 }

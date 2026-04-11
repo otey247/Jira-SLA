@@ -17,6 +17,11 @@ interface RebuildJob {
   message: string | null;
 }
 
+interface RebuildResult {
+  success: boolean;
+  job?: RebuildJob | null;
+}
+
 export default function RebuildJobs() {
   const [projectKey, setProjectKey] = useState('');
   const [issueKey, setIssueKey] = useState('');
@@ -53,7 +58,7 @@ export default function RebuildJobs() {
     if (!issueKey.trim()) return;
     setRunning(true);
     setStatus('');
-    invoke<{ success: boolean; job: RebuildJob }>('rebuildIssue', {
+    invoke<RebuildResult>('rebuildIssue', {
       issueKey: issueKey.trim().toUpperCase(),
       ruleSetId: ruleSetId.trim(),
     })
@@ -61,7 +66,7 @@ export default function RebuildJobs() {
         setStatus(
           result?.success
             ? '✓ Issue rebuild complete.'
-            : `✗ ${result?.job.message ?? 'Issue rebuild failed.'}`,
+            : `✗ ${result?.job?.message ?? 'Issue rebuild failed.'}`,
         );
       })
       .catch((err: Error) => setStatus(`✗ ${err.message}`))
@@ -75,7 +80,7 @@ export default function RebuildJobs() {
     if (!projectKey.trim()) return;
     setRunning(true);
     setStatus('');
-    invoke<{ success: boolean; job: RebuildJob }>('recomputeProjectWindow', {
+    invoke<RebuildResult>('recomputeProjectWindow', {
       projectKey,
       dateStart: dateStart || undefined,
       dateEnd: dateEnd || undefined,
@@ -84,8 +89,8 @@ export default function RebuildJobs() {
       .then((result) => {
         setStatus(
           result?.success
-            ? `✓ Project rebuild complete. ${result.job.processedIssueCount} issue rebuilds processed.`
-            : `✗ ${result?.job.message ?? 'Project rebuild failed.'}`,
+            ? `✓ Project rebuild complete. ${result?.job?.processedIssueCount ?? 0} issue rebuilds processed.`
+            : `✗ ${result?.job?.message ?? 'Project rebuild failed.'}`,
         );
       })
       .catch((err: Error) => setStatus(`✗ ${err.message}`))

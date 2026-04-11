@@ -102,8 +102,10 @@ function KpiCard({
 }
 
 export default function Overview() {
+  const [allSummaries, setAllSummaries] = useState<IssueSummary[]>([]);
   const [summaries, setSummaries] = useState<IssueSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterLoading, setFilterLoading] = useState(false);
   const [projectKey, setProjectKey] = useState('');
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [selectedIssue, setSelectedIssue] = useState<IssueAudit | null>(null);
@@ -123,13 +125,28 @@ export default function Overview() {
         setProjectKey(key);
         if (!key) return;
 
-        return invoke<IssueSummary[]>('searchIssueSummaries', { projectKey: key }).then(
-          (data) => setSummaries(data ?? []),
-        );
+        return invoke<IssueSummary[]>('searchIssueSummaries', { projectKey: key }).then((data) => {
+          const nextSummaries = data ?? [];
+          setAllSummaries(nextSummaries);
+          setSummaries(nextSummaries);
+        });
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!projectKey) return;
+
+    setFilterLoading(true);
+    invoke<IssueSummary[]>('searchIssueSummaries', {
+      projectKey,
+      ...normalizeFilters(filters),
+    })
+      .then((data) => setSummaries(data ?? []))
+      .catch(console.error)
+      .finally(() => setFilterLoading(false));
+  }, [filters, projectKey]);
 
   useEffect(() => {
     if (!selectedIssueKey) {
@@ -142,67 +159,26 @@ export default function Overview() {
       .catch(console.error);
   }, [selectedIssueKey]);
 
-  const filteredSummaries = useMemo(() => {
-    const filtered = summaries.filter((summary) => {
-      if (filters.assigneeAccountId && summary.currentAssignee !== filters.assigneeAccountId) {
-        return false;
-      }
-      if (filters.teamLabel && summary.currentTeam !== filters.teamLabel) {
-        return false;
-      }
-      if (filters.priority && summary.currentPriority !== filters.priority) {
-        return false;
-      }
-      if (filters.currentStatus && summary.currentStatus !== filters.currentStatus) {
-        return false;
-      }
-      if (filters.breachedOnly && !summary.breachState) {
-        return false;
-      }
-      if (
-        filters.dateStart &&
-        summary.lastRecomputedAt < `${filters.dateStart}T00:00:00.000Z`
-      ) {
-        return false;
-      }
-      if (
-        filters.dateEnd &&
-        summary.lastRecomputedAt > `${filters.dateEnd}T23:59:59.999Z`
-      ) {
-        return false;
-      }
-      return true;
-    });
+  const displayedSummaries = useMemo(() => summaries, [summaries]);
 
-    const direction = filters.sortDirection === 'desc' ? -1 : 1;
-    return filtered.sort((left, right) => {
-      const leftValue = left[filters.sortBy];
-      const rightValue = right[filters.sortBy];
-
-      if (leftValue < rightValue) return -1 * direction;
-      if (leftValue > rightValue) return 1 * direction;
-      return left.issueKey.localeCompare(right.issueKey);
-    });
-  }, [filters, summaries]);
-
-  const breachCount = filteredSummaries.filter((summary) => summary.breachState).length;
-  const avgResponse = filteredSummaries.length
-    ? filteredSummaries.reduce((acc, summary) => acc + summary.responseSeconds, 0) /
-      filteredSummaries.length
+  const breachCount = displayedSummaries.filter((summary) => summary.breachState).length;
+  const avgResponse = displayedSummaries.length
+    ? displayedSummaries.reduce((acc, summary) => acc + summary.responseSeconds, 0) /
+      displayedSummaries.length
     : 0;
-  const avgActive = filteredSummaries.length
-    ? filteredSummaries.reduce((acc, summary) => acc + summary.activeSeconds, 0) /
-      filteredSummaries.length
+  const avgActive = displayedSummaries.length
+    ? displayedSummaries.reduce((acc, summary) => acc + summary.activeSeconds, 0) /
+      displayedSummaries.length
     : 0;
-  const avgPaused = filteredSummaries.length
-    ? filteredSummaries.reduce((acc, summary) => acc + summary.pausedSeconds, 0) /
-      filteredSummaries.length
+  const avgPaused = displayedSummaries.length
+    ? displayedSummaries.reduce((acc, summary) => acc + summary.pausedSeconds, 0) /
+      displayedSummaries.length
     : 0;
 
-  const assignees = uniqueValues(summaries.map((summary) => summary.currentAssignee ?? ''));
-  const teams = uniqueValues(summaries.map((summary) => summary.currentTeam ?? ''));
-  const priorities = uniqueValues(summaries.map((summary) => summary.currentPriority));
-  const statuses = uniqueValues(summaries.map((summary) => summary.currentStatus));
+  const assignees = uniqueValues(allSummaries.map((summary) => summary.currentAssignee ?? ''));
+  const teams = uniqueValues(allSummaries.map((summary) => summary.currentTeam ?? ''));
+  const priorities = uniqueValues(allSummaries.map((summary) => summary.currentPriority));
+  const statuses = uniqueValues(allSummaries.map((summary) => summary.currentStatus));
 
   const exportCsv = () => {
     const rows = [
@@ -219,7 +195,7 @@ export default function Overview() {
         'Breached',
         'Last Recomputed At',
       ],
-      ...filteredSummaries.map((summary) => [
+      ...displayedSummaries.map((summary) => [
         summary.issueKey,
         summary.currentState,
         summary.currentStatus,
@@ -403,8 +379,14 @@ export default function Overview() {
           value={String(breachCount)}
           highlight={breachCount > 0}
         />
-        <KpiCard label="Filtered Issues" value={String(filteredSummaries.length)} />
+        <KpiCard label="Filtered Issues" value={String(displayedSummaries.length)} />
       </div>
+
+      {filterLoading && (
+        <div style={{ marginBottom: '12px', color: '#6b778c', fontSize: '12px' }}>
+          Updating results…
+        </div>
+      )}
 
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
         <thead>
@@ -422,7 +404,7 @@ export default function Overview() {
           </tr>
         </thead>
         <tbody>
-          {filteredSummaries.map((summary) => (
+          {displayedSummaries.map((summary) => (
             <tr key={summary.issueKey} style={{ borderBottom: '1px solid #e0e0e0' }}>
               <td style={td}>{summary.issueKey}</td>
               <td style={td}>{summary.currentState}</td>
@@ -452,7 +434,7 @@ export default function Overview() {
               </td>
             </tr>
           ))}
-          {filteredSummaries.length === 0 && (
+          {displayedSummaries.length === 0 && (
             <tr>
               <td colSpan={10} style={{ ...td, textAlign: 'center', color: '#6b778c' }}>
                 No SLA data matches the current filters.
@@ -501,8 +483,11 @@ export default function Overview() {
               : 'Not started'}
           </div>
           <ul style={{ margin: 0, paddingLeft: '18px', color: '#172b4d' }}>
-            {selectedIssue.explanation.map((line) => (
-              <li key={line} style={{ marginBottom: '6px' }}>
+            {selectedIssue.explanation.map((line, index) => (
+              <li
+                key={`${selectedIssue.summary.issueKey}-${index}`}
+                style={{ marginBottom: '6px' }}
+              >
                 {line}
               </li>
             ))}
@@ -511,6 +496,12 @@ export default function Overview() {
       )}
     </div>
   );
+}
+
+function normalizeFilters(filters: Filters): Partial<Filters> {
+  return Object.fromEntries(
+    Object.entries(filters).filter(([, value]) => value !== '' && value !== false),
+  ) as Partial<Filters>;
 }
 
 function FilterSelect({

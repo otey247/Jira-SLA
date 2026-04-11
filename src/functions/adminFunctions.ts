@@ -124,5 +124,10 @@ function assertValidTimeZone(timezone: string): void {
 }
 
 function isValidTime(value: string): boolean {
-  return /^\d{2}:\d{2}$/.test(value);
+  if (!/^\d{2}:\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
 }

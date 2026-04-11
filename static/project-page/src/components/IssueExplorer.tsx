@@ -260,8 +260,8 @@ export default function IssueExplorer() {
             >
               <h3 style={{ fontSize: '14px', marginTop: 0 }}>Audit Explanation</h3>
               <ul style={{ paddingLeft: '18px', marginTop: 0 }}>
-                {detail.explanation.map((line) => (
-                  <li key={line} style={{ marginBottom: '8px' }}>
+                {detail.explanation.map((line, index) => (
+                  <li key={`${detail.summary.issueKey}-${index}`} style={{ marginBottom: '8px' }}>
                     {line}
                   </li>
                 ))}

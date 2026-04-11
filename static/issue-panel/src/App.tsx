@@ -234,8 +234,8 @@ export default function App() {
           Explanation
         </div>
         <ul style={{ margin: 0, paddingLeft: '18px' }}>
-          {explanation.map((line) => (
-            <li key={line} style={{ marginBottom: '6px' }}>
+          {explanation.map((line, index) => (
+            <li key={`${summary.issueKey}-${index}`} style={{ marginBottom: '6px' }}>
               {line}
             </li>
           ))}
