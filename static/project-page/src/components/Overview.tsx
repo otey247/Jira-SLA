@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { invoke, view } from '@forge/bridge';
 
 interface IssueSummary {
@@ -102,7 +102,7 @@ function KpiCard({
 }
 
 export default function Overview() {
-  const [allSummaries, setAllSummaries] = useState<IssueSummary[]>([]);
+  const [unfilteredSummaries, setUnfilteredSummaries] = useState<IssueSummary[]>([]);
   const [summaries, setSummaries] = useState<IssueSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterLoading, setFilterLoading] = useState(false);
@@ -127,7 +127,7 @@ export default function Overview() {
 
         return invoke<IssueSummary[]>('searchIssueSummaries', { projectKey: key }).then((data) => {
           const nextSummaries = data ?? [];
-          setAllSummaries(nextSummaries);
+          setUnfilteredSummaries(nextSummaries);
           setSummaries(nextSummaries);
         });
       })
@@ -159,26 +159,24 @@ export default function Overview() {
       .catch(console.error);
   }, [selectedIssueKey]);
 
-  const displayedSummaries = useMemo(() => summaries, [summaries]);
-
-  const breachCount = displayedSummaries.filter((summary) => summary.breachState).length;
-  const avgResponse = displayedSummaries.length
-    ? displayedSummaries.reduce((acc, summary) => acc + summary.responseSeconds, 0) /
-      displayedSummaries.length
+  const breachCount = summaries.filter((summary) => summary.breachState).length;
+  const avgResponse = summaries.length
+    ? summaries.reduce((acc, summary) => acc + summary.responseSeconds, 0) /
+      summaries.length
     : 0;
-  const avgActive = displayedSummaries.length
-    ? displayedSummaries.reduce((acc, summary) => acc + summary.activeSeconds, 0) /
-      displayedSummaries.length
+  const avgActive = summaries.length
+    ? summaries.reduce((acc, summary) => acc + summary.activeSeconds, 0) /
+      summaries.length
     : 0;
-  const avgPaused = displayedSummaries.length
-    ? displayedSummaries.reduce((acc, summary) => acc + summary.pausedSeconds, 0) /
-      displayedSummaries.length
+  const avgPaused = summaries.length
+    ? summaries.reduce((acc, summary) => acc + summary.pausedSeconds, 0) /
+      summaries.length
     : 0;
 
-  const assignees = uniqueValues(allSummaries.map((summary) => summary.currentAssignee ?? ''));
-  const teams = uniqueValues(allSummaries.map((summary) => summary.currentTeam ?? ''));
-  const priorities = uniqueValues(allSummaries.map((summary) => summary.currentPriority));
-  const statuses = uniqueValues(allSummaries.map((summary) => summary.currentStatus));
+  const assignees = uniqueValues(unfilteredSummaries.map((summary) => summary.currentAssignee ?? ''));
+  const teams = uniqueValues(unfilteredSummaries.map((summary) => summary.currentTeam ?? ''));
+  const priorities = uniqueValues(unfilteredSummaries.map((summary) => summary.currentPriority));
+  const statuses = uniqueValues(unfilteredSummaries.map((summary) => summary.currentStatus));
 
   const exportCsv = () => {
     const rows = [
@@ -195,7 +193,7 @@ export default function Overview() {
         'Breached',
         'Last Recomputed At',
       ],
-      ...displayedSummaries.map((summary) => [
+      ...summaries.map((summary) => [
         summary.issueKey,
         summary.currentState,
         summary.currentStatus,
@@ -379,7 +377,7 @@ export default function Overview() {
           value={String(breachCount)}
           highlight={breachCount > 0}
         />
-        <KpiCard label="Filtered Issues" value={String(displayedSummaries.length)} />
+        <KpiCard label="Filtered Issues" value={String(summaries.length)} />
       </div>
 
       {filterLoading && (
@@ -404,7 +402,7 @@ export default function Overview() {
           </tr>
         </thead>
         <tbody>
-          {displayedSummaries.map((summary) => (
+          {summaries.map((summary) => (
             <tr key={summary.issueKey} style={{ borderBottom: '1px solid #e0e0e0' }}>
               <td style={td}>{summary.issueKey}</td>
               <td style={td}>{summary.currentState}</td>
@@ -434,7 +432,7 @@ export default function Overview() {
               </td>
             </tr>
           ))}
-          {displayedSummaries.length === 0 && (
+          {summaries.length === 0 && (
             <tr>
               <td colSpan={10} style={{ ...td, textAlign: 'center', color: '#6b778c' }}>
                 No SLA data matches the current filters.
