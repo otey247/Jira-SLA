@@ -75,8 +75,7 @@ forge whoami
 
 ## Step 3: Register the app under your Atlassian account
 
-This repository already contains an `app.id` in
-`/home/runner/work/Jira-SLA/Jira-SLA/manifest.yml`.
+This repository already contains an `app.id` in `manifest.yml`.
 
 If that app is not owned by your Atlassian account, register your own copy
 before deploying:
@@ -127,8 +126,7 @@ During installation:
 
 ## App permissions requested
 
-The app requests these Jira scopes from
-`/home/runner/work/Jira-SLA/Jira-SLA/manifest.yml`:
+The app requests these Jira scopes from `manifest.yml`:
 
 - `read:jira-work`
 - `read:jira-user`
