@@ -3,6 +3,9 @@
 This guide explains how to install the Jira SLA Tracker Forge app into a Jira
 Cloud site and complete the first-time configuration.
 
+If you need a shorter version for non-technical Jira admins, see
+[`customer-installation-guide.md`](customer-installation-guide.md).
+
 ## What this app installs
 
 After installation, the app provides:

@@ -6,9 +6,10 @@ precomputed results through Custom UI surfaces and Rovo actions.
 
 ## Installation
 
-See the detailed installation guide:
+See the installation guides:
 
 - [docs/installation-guide.md](docs/installation-guide.md)
+- [docs/customer-installation-guide.md](docs/customer-installation-guide.md)
 
 ## App surfaces
 
