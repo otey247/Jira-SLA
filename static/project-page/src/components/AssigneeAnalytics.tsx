@@ -55,7 +55,7 @@ export default function AssigneeAnalytics() {
               if (s.breachState) existing.breachCount += 1;
               map.set(id, existing);
             }
-            setRows([...map.values()].sort((a, b) => b.totalActive - a.totalActive));
+            setRows(Array.from(map.values()).sort((a, b) => b.totalActive - a.totalActive));
           });
       })
       .catch(console.error)

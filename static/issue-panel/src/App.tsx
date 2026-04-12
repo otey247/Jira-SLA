@@ -16,6 +16,7 @@ interface IssueSummary {
   issueKey: string;
   ruleSetId: string;
   currentState: string;
+  currentStatus: string;
   responseSeconds: number;
   activeSeconds: number;
   pausedSeconds: number;
@@ -24,12 +25,14 @@ interface IssueSummary {
   breachThresholdMinutes: number | null;
   currentAssignee: string | null;
   currentPriority: string;
+  slaStartedAt: string | null;
   lastRecomputedAt: string;
 }
 
 interface Detail {
   summary: IssueSummary;
   segments: IssueSlaSegment[];
+  explanation: string[];
 }
 
 function formatMinutes(seconds: number): string {
@@ -70,11 +73,23 @@ export default function App() {
   const [rebuilding, setRebuilding] = useState(false);
   const [issueKey, setIssueKey] = useState('');
 
+  const loadDetail = (key: string) =>
+    invoke<Detail | null>('getIssueAudit', { issueKey: key })
+      .then((data) => {
+        if (!data) {
+          setError('No SLA data yet for this issue. Trigger a sync first.');
+        } else {
+          setDetail(data);
+          setError('');
+        }
+      })
+      .catch((err: Error) => setError(err.message));
+
   useEffect(() => {
-    // Get the issue key from the Forge context
     view.getContext().then((ctx) => {
       const key =
-        (ctx as unknown as { extension?: { issue?: { key?: string } } }).extension?.issue?.key ?? '';
+        (ctx as unknown as { extension?: { issue?: { key?: string } } }).extension?.issue
+          ?.key ?? '';
       setIssueKey(key);
 
       if (!key) {
@@ -83,16 +98,7 @@ export default function App() {
         return;
       }
 
-      invoke<Detail | null>('getIssueTimeline', { issueKey: key })
-        .then((d) => {
-          if (!d) {
-            setError('No SLA data yet for this issue. Trigger a sync first.');
-          } else {
-            setDetail(d);
-          }
-        })
-        .catch((err: Error) => setError(err.message))
-        .finally(() => setLoading(false));
+      loadDetail(key).finally(() => setLoading(false));
     });
   }, []);
 
@@ -100,11 +106,7 @@ export default function App() {
     if (!issueKey || !detail) return;
     setRebuilding(true);
     invoke('rebuildIssue', { issueKey, ruleSetId: detail.summary.ruleSetId })
-      .then(() =>
-        invoke<Detail | null>('getIssueTimeline', { issueKey }).then((d) => {
-          if (d) setDetail(d);
-        }),
-      )
+      .then(() => loadDetail(issueKey))
       .catch(console.error)
       .finally(() => setRebuilding(false));
   };
@@ -127,12 +129,18 @@ export default function App() {
 
   if (!detail) return null;
 
-  const { summary, segments } = detail;
+  const { summary, segments, explanation } = detail;
 
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '12px', fontSize: '13px' }}>
-      {/* State badge */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '12px',
+        }}
+      >
         <span
           style={{
             padding: '3px 10px',
@@ -144,7 +152,7 @@ export default function App() {
           }}
         >
           {summary.currentState.toUpperCase()}
-          {summary.breachState && ` ⚠ BREACHED`}
+          {summary.breachState && ' ⚠ BREACHED'}
         </span>
         <button
           onClick={handleRebuild}
@@ -162,7 +170,6 @@ export default function App() {
         </button>
       </div>
 
-      {/* Metrics grid */}
       <div
         style={{
           display: 'grid',
@@ -172,24 +179,33 @@ export default function App() {
         }}
       >
         {[
+          {
+            label: 'SLA Start',
+            value: summary.slaStartedAt
+              ? new Date(summary.slaStartedAt).toLocaleString()
+              : 'Not started',
+          },
           { label: 'Response', value: formatMinutes(summary.responseSeconds) },
           { label: 'Active', value: formatMinutes(summary.activeSeconds) },
           { label: 'Paused', value: formatMinutes(summary.pausedSeconds) },
-          { label: 'Outside Hours', value: formatMinutes(summary.outsideHoursSeconds) },
-          { label: 'Priority', value: summary.currentPriority },
+          { label: 'Status', value: summary.currentStatus || '—' },
           { label: 'Assignee', value: summary.currentAssignee ?? '—' },
-        ].map((m) => (
+          { label: 'Priority', value: summary.currentPriority },
+          {
+            label: 'Outside Hours',
+            value: formatMinutes(summary.outsideHoursSeconds),
+          },
+        ].map((metric) => (
           <div
-            key={m.label}
+            key={metric.label}
             style={{ background: '#f4f5f7', borderRadius: '4px', padding: '8px 10px' }}
           >
-            <div style={{ fontWeight: 700, fontSize: '15px' }}>{m.value}</div>
-            <div style={{ fontSize: '11px', color: '#6b778c' }}>{m.label}</div>
+            <div style={{ fontWeight: 700, fontSize: '15px' }}>{metric.value}</div>
+            <div style={{ fontSize: '11px', color: '#6b778c' }}>{metric.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Breach warning */}
       {summary.breachState && (
         <div
           style={{
@@ -202,19 +218,37 @@ export default function App() {
             fontSize: '12px',
           }}
         >
-          ⚠ SLA breached — active handling exceeded{' '}
-          {summary.breachThresholdMinutes} minutes
+          ⚠ SLA breached — active handling exceeded {summary.breachThresholdMinutes} minutes
         </div>
       )}
 
-      {/* Segment timeline */}
+      <div
+        style={{
+          background: '#f4f5f7',
+          borderRadius: '4px',
+          padding: '12px',
+          marginBottom: '16px',
+        }}
+      >
+        <div style={{ fontWeight: 600, marginBottom: '8px', color: '#172b4d' }}>
+          Explanation
+        </div>
+        <ul style={{ margin: 0, paddingLeft: '18px' }}>
+          {explanation.map((line, index) => (
+            <li key={`${summary.issueKey}-${index}`} style={{ marginBottom: '6px' }}>
+              {line}
+            </li>
+          ))}
+        </ul>
+      </div>
+
       <div style={{ fontWeight: 600, marginBottom: '8px', color: '#172b4d' }}>
         Timeline
       </div>
       <div>
-        {segments.map((seg) => (
+        {segments.map((segment) => (
           <div
-            key={seg.segmentId}
+            key={segment.segmentId}
             style={{
               display: 'flex',
               alignItems: 'flex-start',
@@ -227,28 +261,35 @@ export default function App() {
                 width: '10px',
                 height: '10px',
                 borderRadius: '50%',
-                background: SEGMENT_COLORS[seg.segmentType] ?? '#e0e0e0',
+                background: SEGMENT_COLORS[segment.segmentType] ?? '#e0e0e0',
                 marginTop: '3px',
                 flexShrink: 0,
               }}
             />
             <div>
-              <div style={{ fontWeight: 600, color: SEGMENT_COLORS[seg.segmentType] ?? '#333' }}>
-                {seg.segmentType}
-                {' · '}
+              <div
+                style={{
+                  fontWeight: 600,
+                  color: SEGMENT_COLORS[segment.segmentType] ?? '#333',
+                }}
+              >
+                {segment.segmentType} ·{' '}
                 <span style={{ fontWeight: 400, color: '#6b778c' }}>
-                  {formatMinutes(seg.businessSeconds)} (biz hrs)
+                  {formatMinutes(
+                    segment.segmentType === 'outside-hours'
+                      ? segment.rawSeconds
+                      : segment.businessSeconds,
+                  )}
                 </span>
               </div>
               <div style={{ color: '#6b778c', fontSize: '11px' }}>
-                {new Date(seg.startedAt).toLocaleString()} →{' '}
-                {new Date(seg.endedAt).toLocaleString()}
+                {new Date(segment.startedAt).toLocaleString()} →{' '}
+                {new Date(segment.endedAt).toLocaleString()}
               </div>
-              {seg.status && (
-                <div style={{ color: '#6b778c', fontSize: '11px' }}>
-                  status: {seg.status}
-                </div>
-              )}
+              <div style={{ color: '#6b778c', fontSize: '11px' }}>
+                status: {segment.status || '—'} · assignee:{' '}
+                {segment.assigneeAccountId ?? '—'}
+              </div>
             </div>
           </div>
         ))}

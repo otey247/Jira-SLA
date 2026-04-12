@@ -87,6 +87,64 @@ export async function rovoListBreaches(payload: {
   return { breaches };
 }
 
+export async function rovoGetAssigneeMetrics(payload: {
+  projectKey: string;
+}): Promise<{
+  metrics: Array<{
+    assigneeAccountId: string;
+    issueCount: number;
+    avgResponseSeconds: number;
+    avgActiveSeconds: number;
+    breachCount: number;
+  }>;
+}> {
+  const summaries = await listSummariesForProject(payload.projectKey);
+  const rollup = new Map<
+    string,
+    {
+      issueCount: number;
+      responseSeconds: number;
+      activeSeconds: number;
+      breachCount: number;
+    }
+  >();
+
+  for (const summary of summaries) {
+    const assigneeAccountId = summary.currentAssignee ?? 'unassigned';
+    const existing = rollup.get(assigneeAccountId) ?? {
+      issueCount: 0,
+      responseSeconds: 0,
+      activeSeconds: 0,
+      breachCount: 0,
+    };
+
+    existing.issueCount += 1;
+    existing.responseSeconds += summary.responseSeconds;
+    existing.activeSeconds += summary.activeSeconds;
+    if (summary.breachState) {
+      existing.breachCount += 1;
+    }
+
+    rollup.set(assigneeAccountId, existing);
+  }
+
+  return {
+    metrics: [...rollup.entries()]
+      .map(([assigneeAccountId, value]) => ({
+        assigneeAccountId,
+        issueCount: value.issueCount,
+        avgResponseSeconds: value.issueCount
+          ? value.responseSeconds / value.issueCount
+          : 0,
+        avgActiveSeconds: value.issueCount
+          ? value.activeSeconds / value.issueCount
+          : 0,
+        breachCount: value.breachCount,
+      }))
+      .sort((left, right) => right.avgActiveSeconds - left.avgActiveSeconds),
+  };
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatMinutes(minutes: number): string {

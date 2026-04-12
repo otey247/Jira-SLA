@@ -11,11 +11,21 @@ interface IssueSummary {
   breachState: boolean;
   currentAssignee: string | null;
   currentPriority: string;
-  perAssigneeTotals: Record<string, number>;
+  currentStatus: string;
+  slaStartedAt: string | null;
 }
 
-interface IssueSlaDetail {
+interface Worklog {
+  id: string;
+  started: string;
+  timeSpentSeconds: number;
+  author: { accountId: string; displayName: string };
+}
+
+interface IssueAuditDetail {
   summary: IssueSummary;
+  explanation: string[];
+  worklogs: Worklog[];
   segments: Array<{
     segmentId: string;
     segmentType: string;
@@ -24,6 +34,7 @@ interface IssueSlaDetail {
     status: string;
     assigneeAccountId: string | null;
     businessSeconds: number;
+    rawSeconds: number;
   }>;
 }
 
@@ -44,42 +55,45 @@ const STATE_COLOR: Record<string, string> = {
 export default function IssueExplorer() {
   const [issueKey, setIssueKey] = useState('');
   const [query, setQuery] = useState('');
-  const [detail, setDetail] = useState<IssueSlaDetail | null>(null);
+  const [detail, setDetail] = useState<IssueAuditDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [rebuilding, setRebuilding] = useState(false);
+
+  const loadIssue = (key: string) => {
+    setLoading(true);
+    setError('');
+    invoke<IssueAuditDetail | null>('getIssueAudit', { issueKey: key })
+      .then((audit) => {
+        if (!audit) {
+          setError(`No SLA data found for ${key}.`);
+          setDetail(null);
+        } else {
+          setDetail(audit);
+        }
+      })
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (!issueKey) return;
+    loadIssue(issueKey);
+  }, [issueKey]);
 
   const handleSearch = () => {
     if (!query.trim()) return;
     setIssueKey(query.trim().toUpperCase());
   };
 
-  useEffect(() => {
-    if (!issueKey) return;
-    setLoading(true);
-    setError('');
-    invoke<IssueSlaDetail | null>('getIssueTimeline', { issueKey })
-      .then((d) => {
-        if (!d) {
-          setError(`No SLA data found for ${issueKey}.`);
-          setDetail(null);
-        } else {
-          setDetail(d);
-        }
-      })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [issueKey]);
-
   const handleRebuild = () => {
     if (!issueKey || !detail) return;
     setRebuilding(true);
-    invoke('rebuildIssue', { issueKey, ruleSetId: detail.summary.ruleSetId ?? '' })
-      .then(() => {
-        // Reload
-        setIssueKey((k) => k + ' ');
-        setTimeout(() => setIssueKey((k) => k.trim()), 100);
-      })
+    invoke<{ success: boolean }>('rebuildIssue', {
+      issueKey,
+      ruleSetId: detail.summary.ruleSetId ?? '',
+    })
+      .then(() => loadIssue(issueKey))
       .catch(console.error)
       .finally(() => setRebuilding(false));
   };
@@ -88,7 +102,6 @@ export default function IssueExplorer() {
     <div>
       <h2 style={{ fontSize: '16px', marginBottom: '16px' }}>Issue Explorer</h2>
 
-      {/* Search bar */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
         <input
           type="text"
@@ -124,7 +137,6 @@ export default function IssueExplorer() {
 
       {detail && (
         <div>
-          {/* Summary header */}
           <div
             style={{
               display: 'flex',
@@ -165,58 +177,121 @@ export default function IssueExplorer() {
             </button>
           </div>
 
-          {/* Metrics */}
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px' }}>
             {[
+              { label: 'SLA Start', value: detail.summary.slaStartedAt ? new Date(detail.summary.slaStartedAt).toLocaleString() : 'Not started' },
               { label: 'Response', value: formatMinutes(detail.summary.responseSeconds) },
               { label: 'Active', value: formatMinutes(detail.summary.activeSeconds) },
               { label: 'Paused', value: formatMinutes(detail.summary.pausedSeconds) },
-              { label: 'Priority', value: detail.summary.currentPriority },
+              { label: 'Status', value: detail.summary.currentStatus || '—' },
               { label: 'Assignee', value: detail.summary.currentAssignee ?? '—' },
-            ].map((m) => (
+            ].map((metric) => (
               <div
-                key={m.label}
+                key={metric.label}
                 style={{
                   background: '#f4f5f7',
                   borderRadius: '4px',
                   padding: '12px 16px',
-                  minWidth: '110px',
+                  minWidth: '130px',
                 }}
               >
-                <div style={{ fontSize: '18px', fontWeight: 700 }}>{m.value}</div>
-                <div style={{ fontSize: '12px', color: '#6b778c' }}>{m.label}</div>
+                <div style={{ fontSize: '16px', fontWeight: 700 }}>{metric.value}</div>
+                <div style={{ fontSize: '12px', color: '#6b778c' }}>{metric.label}</div>
               </div>
             ))}
           </div>
 
-          {/* Segment timeline */}
-          <h3 style={{ fontSize: '14px', marginBottom: '8px' }}>Segment Timeline</h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ background: '#f4f5f7' }}>
-                <th style={th}>Type</th>
-                <th style={th}>Start</th>
-                <th style={th}>End</th>
-                <th style={th}>Status</th>
-                <th style={th}>Assignee</th>
-                <th style={th}>Biz Hours</th>
-              </tr>
-            </thead>
-            <tbody>
-              {detail.segments.map((seg) => (
-                <tr key={seg.segmentId} style={{ borderBottom: '1px solid #e0e0e0' }}>
-                  <td style={{ ...td, color: STATE_COLOR[seg.segmentType] ?? '#333', fontWeight: 600 }}>
-                    {seg.segmentType}
-                  </td>
-                  <td style={td}>{new Date(seg.startedAt).toLocaleString()}</td>
-                  <td style={td}>{new Date(seg.endedAt).toLocaleString()}</td>
-                  <td style={td}>{seg.status || '—'}</td>
-                  <td style={td}>{seg.assigneeAccountId ?? '—'}</td>
-                  <td style={td}>{formatMinutes(seg.businessSeconds)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 2fr) minmax(280px, 1fr)',
+              gap: '16px',
+              alignItems: 'start',
+            }}
+          >
+            <div>
+              <h3 style={{ fontSize: '14px', marginBottom: '8px' }}>Segment Timeline</h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ background: '#f4f5f7' }}>
+                    <th style={th}>Type</th>
+                    <th style={th}>Start</th>
+                    <th style={th}>End</th>
+                    <th style={th}>Status</th>
+                    <th style={th}>Assignee</th>
+                    <th style={th}>Counted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.segments.map((segment) => (
+                    <tr key={segment.segmentId} style={{ borderBottom: '1px solid #e0e0e0' }}>
+                      <td
+                        style={{
+                          ...td,
+                          color: STATE_COLOR[segment.segmentType] ?? '#333',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {segment.segmentType}
+                      </td>
+                      <td style={td}>{new Date(segment.startedAt).toLocaleString()}</td>
+                      <td style={td}>{new Date(segment.endedAt).toLocaleString()}</td>
+                      <td style={td}>{segment.status || '—'}</td>
+                      <td style={td}>{segment.assigneeAccountId ?? '—'}</td>
+                      <td style={td}>
+                        {formatMinutes(
+                          segment.segmentType === 'outside-hours'
+                            ? segment.rawSeconds
+                            : segment.businessSeconds,
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div
+              style={{
+                background: '#f4f5f7',
+                borderRadius: '4px',
+                padding: '16px',
+              }}
+            >
+              <h3 style={{ fontSize: '14px', marginTop: 0 }}>Audit Explanation</h3>
+              <ul style={{ paddingLeft: '18px', marginTop: 0 }}>
+                {detail.explanation.map((line, index) => (
+                  <li key={`${detail.summary.issueKey}-${index}`} style={{ marginBottom: '8px' }}>
+                    {line}
+                  </li>
+                ))}
+              </ul>
+
+              <h3 style={{ fontSize: '14px' }}>Worklog Comparison</h3>
+              {detail.worklogs.length === 0 ? (
+                <div style={{ color: '#6b778c', fontSize: '12px' }}>No worklogs found.</div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ background: '#fff' }}>
+                      <th style={th}>Author</th>
+                      <th style={th}>Started</th>
+                      <th style={th}>Spent</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.worklogs.map((worklog) => (
+                      <tr key={worklog.id} style={{ borderBottom: '1px solid #dfe1e6' }}>
+                        <td style={td}>{worklog.author.displayName}</td>
+                        <td style={td}>{new Date(worklog.started).toLocaleString()}</td>
+                        <td style={td}>{formatMinutes(worklog.timeSpentSeconds)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

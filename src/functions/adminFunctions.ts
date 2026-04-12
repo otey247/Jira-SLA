@@ -26,6 +26,8 @@ export async function saveRuleSet(input: RuleSetInput): Promise<RuleSet> {
     throw new Error('A business calendar is required for every rule set.');
   }
 
+  validateRuleSetInput(input);
+
   const ruleSet: RuleSet = {
     ...existing,
     ...input,
@@ -61,6 +63,8 @@ export async function saveBusinessCalendar(
   const now = new Date().toISOString();
   const existing = input.calendarId ? await getCalendar(input.calendarId) : null;
 
+  validateCalendarInput(input);
+
   const calendar: BusinessCalendar = {
     ...existing,
     ...input,
@@ -73,4 +77,57 @@ export async function saveBusinessCalendar(
 
   await persistCalendar(calendar);
   return calendar;
+}
+
+function validateRuleSetInput(input: RuleSetInput): void {
+  if (!input.name?.trim()) {
+    throw new Error('Rule set name is required.');
+  }
+
+  if (!input.timezone?.trim()) {
+    throw new Error('Rule set timezone is required.');
+  }
+
+  assertValidTimeZone(input.timezone);
+
+  if ((input.projectKeys ?? []).some((projectKey) => !/^[A-Z][A-Z0-9_]*$/.test(projectKey))) {
+    throw new Error('Project keys must be uppercase Jira project keys.');
+  }
+}
+
+function validateCalendarInput(input: CalendarInput): void {
+  if (!input.name?.trim()) {
+    throw new Error('Calendar name is required.');
+  }
+
+  if (!input.timezone?.trim()) {
+    throw new Error('Calendar timezone is required.');
+  }
+
+  assertValidTimeZone(input.timezone);
+
+  if ((input.workingDays ?? []).length === 0) {
+    throw new Error('Select at least one working day.');
+  }
+
+  if (!isValidTime(input.workingHoursStart ?? '') || !isValidTime(input.workingHoursEnd ?? '')) {
+    throw new Error('Working hours must use HH:MM format.');
+  }
+}
+
+function assertValidTimeZone(timezone: string): void {
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: timezone });
+  } catch {
+    throw new Error(`Unsupported timezone: ${timezone}`);
+  }
+}
+
+function isValidTime(value: string): boolean {
+  if (!/^\d{2}:\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
 }

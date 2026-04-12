@@ -1,5 +1,7 @@
+import { jest } from '@jest/globals';
+
 // Mock @forge/api
-const mockRequestJira = jest.fn();
+const mockRequestJira: any = jest.fn();
 
 const api = {
   asApp: () => ({
