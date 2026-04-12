@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc --noEmit && vite build",
     "dev": "vite build --watch",
-    "test": "vitest run"
+    "test": "vitest run tests/unit && jest --runInBand",
+    "test:vitest": "vitest run tests/unit",
+    "test:jest": "jest --runInBand"
   },
   "repository": {
     "type": "git",
@@ -24,16 +26,41 @@
     "@forge/kvs": "^1.6.0",
     "@forge/resolver": "^1.7.1",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@jest/globals": "^30.3.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/uuid": "^9.0.8",
     "@vitejs/plugin-react": "^6.0.1",
+    "jest": "^30.3.0",
     "jsdom": "^29.0.2",
+    "ts-jest": "^29.4.9",
     "typescript": "^6.0.2",
     "vite": "^8.0.8",
     "vitest": "^4.1.4"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/src"
+    ],
+    "testMatch": [
+      "<rootDir>/src/__tests__/**/*.test.ts"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/dist/"
+    ],
+    "moduleNameMapper": {
+      "^@forge/api$": "<rootDir>/src/__mocks__/@forge/api.ts",
+      "^@forge/kvs$": "<rootDir>/src/__mocks__/@forge/kvs.ts",
+      "^@forge/resolver$": "<rootDir>/src/__mocks__/@forge/resolver.ts"
+    }
   }
 }

@@ -1,0 +1,26 @@
+{
+  "name": "sla-gadget",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@forge/bridge": "^3.3.0",
+    "@forge/react": "^10.9.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "@types/react": "^18.2.79",
+    "@types/react-dom": "^18.2.25",
+    "react-scripts": "5.0.1",
+    "typescript": "^5.4.5"
+  },
+  "scripts": {
+    "build": "react-scripts build",
+    "start": "react-scripts start"
+  },
+  "browserslist": {
+    "production": [">0.2%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version"]
+  }
+}

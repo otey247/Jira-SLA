@@ -9,11 +9,15 @@ permissions:
     - write:jira-work
     - read:jira-user
     - storage:app
+  content:
+    styles:
+      - unsafe-inline
 
 modules:
   jira:projectPage:
     - key: jira-sla-project-page
       title: SLA Analytics
+      layout: basic
       resource: main
       resolver:
         function: ui-resolver
@@ -26,6 +30,7 @@ modules:
   jira:dashboardGadget:
     - key: jira-sla-dashboard-gadget
       title: SLA Metrics
+      description: Visualize SLA metrics, breaches, and assignee performance
       resource: main
       resolver:
         function: ui-resolver
@@ -36,19 +41,27 @@ modules:
   action:
     - key: jira-sla-automation-recompute
       title: Recompute SLA data
+      description: Recompute the persisted SLA summary for an issue or project window
       function: automation-recompute
     - key: jira-sla-rovo-get-summary
       title: Get issue SLA summary
+      description: Returns the precomputed SLA summary for a given issue key
       function: rovo-get-summary
     - key: jira-sla-rovo-explain-issue
       title: Explain issue SLA timeline
+      description: Returns a human-readable explanation of the SLA timeline for an issue
       function: rovo-explain-issue
     - key: jira-sla-rovo-list-breaches
       title: List breached SLA issues
+      description: Returns the list of issues that have breached SLA for the provided filters
       function: rovo-list-breaches
   rovo:agent:
     - key: jira-sla-agent
       name: SLA Analyst
+      description: >
+        I help analyse Jira SLA data, including response times, active handling
+        time, SLA breaches, assignee performance, and ticket timeline
+        explanations.
       prompt: resource:agent-prompt
       actions:
         - jira-sla-rovo-get-summary
