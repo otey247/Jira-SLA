@@ -8,66 +8,216 @@ export interface BusinessChunk {
   isBusinessTime: boolean;
 }
 
-const DAY_IN_MS = 24 * 60 * 60 * 1000;
+interface LocalDateTimeParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}
 
 const parseClock = (clock: string): number => {
   const [hours, minutes] = clock.split(':').map(Number);
   return (hours * 60) + minutes;
 };
 
-const isoDate = (date: Date): string => date.toISOString().slice(0, 10);
+const durationSeconds = (startedAtMs: number, endedAtMs: number): number =>
+  Math.max(0, Math.floor((endedAtMs - startedAtMs) / 1000));
 
-const startOfUtcDay = (date: Date): Date => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+const addLocalDays = (
+  localDateTime: Pick<LocalDateTimeParts, 'year' | 'month' | 'day'>,
+  daysToAdd: number,
+): LocalDateTimeParts => {
+  const next = new Date(
+    Date.UTC(localDateTime.year, localDateTime.month - 1, localDateTime.day + daysToAdd),
+  );
 
-const addMinutes = (date: Date, minutes: number): Date => new Date(date.getTime() + (minutes * 60 * 1000));
+  return {
+    year: next.getUTCFullYear(),
+    month: next.getUTCMonth() + 1,
+    day: next.getUTCDate(),
+    hour: 0,
+    minute: 0,
+    second: 0,
+  };
+};
 
-export const secondsBetween = (startedAt: Date, endedAt: Date): number => Math.max(0, Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000));
+const toLocalDateString = (
+  localDate: Pick<LocalDateTimeParts, 'year' | 'month' | 'day'>,
+): string =>
+  `${localDate.year}-${String(localDate.month).padStart(2, '0')}-${String(
+    localDate.day,
+  ).padStart(2, '0')}`;
+
+function getLocalDateTimeParts(
+  timezone: string,
+  date: Date,
+): LocalDateTimeParts {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+  const get = (type: string) =>
+    parseInt(parts.find((part) => part.type === type)?.value ?? '0', 10);
+
+  return {
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: get('hour'),
+    minute: get('minute'),
+    second: get('second'),
+  };
+}
+
+function getTimezoneOffsetMs(timezone: string, date: Date): number {
+  const local = getLocalDateTimeParts(timezone, date);
+  const utcEquivalent = Date.UTC(
+    local.year,
+    local.month - 1,
+    local.day,
+    local.hour,
+    local.minute,
+    local.second,
+  );
+
+  return utcEquivalent - date.getTime();
+}
+
+function zonedLocalTimeToUtcMs(
+  timezone: string,
+  localDateTime: LocalDateTimeParts,
+): number {
+  const baseUtc = Date.UTC(
+    localDateTime.year,
+    localDateTime.month - 1,
+    localDateTime.day,
+    localDateTime.hour,
+    localDateTime.minute,
+    localDateTime.second,
+  );
+
+  let offset = getTimezoneOffsetMs(timezone, new Date(baseUtc));
+  let resolvedUtc = baseUtc - offset;
+  const resolvedOffset = getTimezoneOffsetMs(timezone, new Date(resolvedUtc));
+
+  if (resolvedOffset !== offset) {
+    offset = resolvedOffset;
+    resolvedUtc = baseUtc - offset;
+  }
+
+  return resolvedUtc;
+}
+
+export const secondsBetween = (startedAt: Date, endedAt: Date): number =>
+  durationSeconds(startedAt.getTime(), endedAt.getTime());
 
 export const splitIntervalByBusinessHours = (
   startedAtIso: string,
   endedAtIso: string,
   calendar: BusinessCalendar,
 ): BusinessChunk[] => {
-  const startedAt = new Date(startedAtIso);
-  const endedAt = new Date(endedAtIso);
-  if (endedAt <= startedAt) {
+  const startedAtMs = new Date(startedAtIso).getTime();
+  const endedAtMs = new Date(endedAtIso).getTime();
+
+  if (endedAtMs <= startedAtMs) {
     return [];
   }
 
   const openingMinutes = parseClock(calendar.workingHours.start);
   const closingMinutes = parseClock(calendar.workingHours.end);
+  const holidaySet = new Set(calendar.holidays);
   const chunks: BusinessChunk[] = [];
-  let cursor = startedAt;
+  let cursorMs = startedAtMs;
 
-  while (cursor < endedAt) {
-    const dayStart = startOfUtcDay(cursor);
-    const dayEnd = new Date(dayStart.getTime() + DAY_IN_MS);
-    const working = calendar.workingDays.includes(dayStart.getUTCDay()) && !calendar.holidays.includes(isoDate(dayStart));
-    const openAt = addMinutes(dayStart, openingMinutes);
-    const closeAt = addMinutes(dayStart, closingMinutes);
+  while (cursorMs < endedAtMs) {
+    const localCursor = getLocalDateTimeParts(calendar.timezone, new Date(cursorMs));
+    const localDate = {
+      year: localCursor.year,
+      month: localCursor.month,
+      day: localCursor.day,
+    };
+    const dayStartUtc = zonedLocalTimeToUtcMs(calendar.timezone, {
+      ...localDate,
+      hour: 0,
+      minute: 0,
+      second: 0,
+    });
+    const nextDayStartUtc = zonedLocalTimeToUtcMs(
+      calendar.timezone,
+      addLocalDays(localDate, 1),
+    );
+    const localDayOfWeek = new Date(
+      Date.UTC(localDate.year, localDate.month - 1, localDate.day),
+    ).getUTCDay();
+    const dateKey = toLocalDateString(localDate);
+    const isWorkingDay =
+      calendar.workingDays.includes(localDayOfWeek) && !holidaySet.has(dateKey);
 
-    let boundary = dayEnd;
-    let isBusinessTime = false;
+    const openAtUtc = zonedLocalTimeToUtcMs(calendar.timezone, {
+      ...localDate,
+      hour: Math.floor(openingMinutes / 60),
+      minute: openingMinutes % 60,
+      second: 0,
+    });
+    const closeAtUtc = zonedLocalTimeToUtcMs(calendar.timezone, {
+      ...localDate,
+      hour: Math.floor(closingMinutes / 60),
+      minute: closingMinutes % 60,
+      second: 0,
+    });
 
-    if (working) {
-      if (cursor < openAt) {
-        boundary = openAt;
-      } else if (cursor < closeAt) {
-        boundary = closeAt;
-        isBusinessTime = true;
-      }
+    const dayEndUtc = Math.min(nextDayStartUtc, endedAtMs);
+
+    if (
+      !isWorkingDay ||
+      closeAtUtc <= cursorMs ||
+      openAtUtc >= dayEndUtc
+    ) {
+      const chunkEndMs = dayEndUtc;
+      chunks.push({
+        startedAt: new Date(cursorMs).toISOString(),
+        endedAt: new Date(chunkEndMs).toISOString(),
+        rawSeconds: durationSeconds(cursorMs, chunkEndMs),
+        businessSeconds: 0,
+        isBusinessTime: false,
+      });
+      cursorMs = chunkEndMs;
+      continue;
     }
 
-    const chunkEnd = new Date(Math.min(boundary.getTime(), endedAt.getTime()));
-    const rawSeconds = secondsBetween(cursor, chunkEnd);
+    if (cursorMs < openAtUtc) {
+      const chunkEndMs = Math.min(openAtUtc, endedAtMs);
+      chunks.push({
+        startedAt: new Date(cursorMs).toISOString(),
+        endedAt: new Date(chunkEndMs).toISOString(),
+        rawSeconds: durationSeconds(cursorMs, chunkEndMs),
+        businessSeconds: 0,
+        isBusinessTime: false,
+      });
+      cursorMs = chunkEndMs;
+      continue;
+    }
+
+    const chunkEndMs = Math.min(closeAtUtc, endedAtMs);
+    const rawSeconds = durationSeconds(cursorMs, chunkEndMs);
     chunks.push({
-      startedAt: cursor.toISOString(),
-      endedAt: chunkEnd.toISOString(),
+      startedAt: new Date(cursorMs).toISOString(),
+      endedAt: new Date(chunkEndMs).toISOString(),
       rawSeconds,
-      businessSeconds: isBusinessTime ? rawSeconds : 0,
-      isBusinessTime,
+      businessSeconds: rawSeconds,
+      isBusinessTime: true,
     });
-    cursor = chunkEnd;
+    cursorMs = chunkEndMs;
   }
 
   return chunks;

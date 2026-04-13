@@ -1,7 +1,10 @@
 import { kvs } from '@forge/kvs';
 import {
+  getSegments,
+  getSummary,
   listAggregatesForProject,
   listRebuildJobs,
+  saveSegments,
   saveAggregate,
   saveRebuildJob,
   saveSummary,
@@ -85,6 +88,43 @@ describe('reporting helpers', () => {
         breachCount: 0,
       },
     ]);
+  });
+
+  test('getSummary and getSegments use the stored issue to rule set mapping', async () => {
+    await saveSummary(summaryBase);
+    await saveSegments('rs-1', 'PROJ-1', [
+      {
+        segmentId: 'seg-lookup',
+        issueKey: 'PROJ-1',
+        ruleSetId: 'rs-1',
+        ruleSetVersion: 1,
+        assigneeAccountId: 'assignee-alice',
+        teamLabel: 'Capgemini',
+        status: 'Assigned',
+        priority: 'High',
+        segmentType: 'response',
+        startedAt: '2024-01-08T09:00:00.000Z',
+        endedAt: '2024-01-08T09:15:00.000Z',
+        rawSeconds: 900,
+        businessSeconds: 900,
+        sourceEventStart: 'event-1',
+        sourceEventEnd: 'event-2',
+      },
+    ]);
+
+    await saveSummary({
+      ...summaryBase,
+      issueKey: 'PROJ-1',
+      ruleSetId: 'rs-2',
+      currentPriority: 'Critical',
+    });
+
+    const storedSummary = await getSummary('PROJ-1');
+    const storedSegments = await getSegments('PROJ-1');
+
+    expect(storedSummary?.ruleSetId).toBe('rs-2');
+    expect(storedSegments).toEqual([]);
+    expect(await getSegments('PROJ-1', 'rs-1')).toHaveLength(1);
   });
 
   test('buildExplanation includes start and pause/resume reasoning lines', () => {

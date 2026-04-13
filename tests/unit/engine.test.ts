@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { splitIntervalByBusinessHours } from '../../src/domain/rules/businessHours';
 import { calculateIssueSla } from '../../src/domain/rules/engine';
 import { normalizeJiraIssue } from '../../src/integrations/jira/normalize';
 import { MemoryApplicationStore } from '../../src/storage/appStore';
@@ -69,5 +70,40 @@ describe('MemoryApplicationStore', () => {
 
     const breached = await store.listIssueSummaries({ breachState: 'breached' });
     expect(breached.length).toBeGreaterThan(0);
+  });
+});
+
+describe('splitIntervalByBusinessHours', () => {
+  it('uses the configured calendar timezone when slicing business time', () => {
+    const slices = splitIntervalByBusinessHours(
+      '2024-01-08T13:30:00.000Z',
+      '2024-01-08T15:30:00.000Z',
+      {
+        calendarId: 'cal-est',
+        name: 'US East',
+        timezone: 'America/New_York',
+        workingDays: [1, 2, 3, 4, 5],
+        workingHours: { start: '09:00', end: '17:00' },
+        holidays: [],
+        afterHoursMode: 'business-hours',
+      },
+    );
+
+    expect(slices).toEqual([
+      {
+        startedAt: '2024-01-08T13:30:00.000Z',
+        endedAt: '2024-01-08T14:00:00.000Z',
+        rawSeconds: 1800,
+        businessSeconds: 0,
+        isBusinessTime: false,
+      },
+      {
+        startedAt: '2024-01-08T14:00:00.000Z',
+        endedAt: '2024-01-08T15:30:00.000Z',
+        rawSeconds: 5400,
+        businessSeconds: 5400,
+        isBusinessTime: true,
+      },
+    ]);
   });
 });

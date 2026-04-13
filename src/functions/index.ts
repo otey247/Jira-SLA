@@ -1,18 +1,23 @@
 import Resolver from '@forge/resolver';
 import {
-  automationRecompute,
   exportCsv,
   getBootstrapData,
   getIssueSummary,
   getIssueTimeline,
   markIssueForRebuild,
-  rovoListBreaches,
   runIssueRebuild,
   saveBusinessCalendar,
   saveRuleSet,
-  scheduledSync,
   searchIssueSummaries,
 } from './app';
+import { scheduledSync } from './scheduledSync';
+import { automationRecompute } from './automationRecompute';
+import {
+  rovoExplainIssue,
+  rovoGetAssigneeMetrics,
+  rovoGetIssueSummary,
+  rovoListBreaches,
+} from './rovoActions';
 
 const resolver = new Resolver();
 const issuePayload = (payload: unknown): { issueKey: string } => payload as { issueKey: string };
@@ -30,6 +35,7 @@ resolver.define('exportCsv', async ({ payload }) => exportCsv(payload ?? {}));
 export const uiResolver = resolver.getDefinitions();
 export { scheduledSync };
 export { automationRecompute };
-export const rovoGetIssueSummary = async ({ issueKey }: { issueKey: string }) => getIssueSummary(issueKey);
-export const rovoExplainIssue = async ({ issueKey }: { issueKey: string }) => getIssueTimeline(issueKey);
 export { rovoListBreaches };
+export { rovoGetIssueSummary };
+export { rovoExplainIssue };
+export { rovoGetAssigneeMetrics };

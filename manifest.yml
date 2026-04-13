@@ -1,7 +1,11 @@
 app:
-  id: jira-sla-analytics
+  id: ari:cloud:ecosystem::app/${APP_ID}
   runtime:
     name: nodejs22.x
+
+environment:
+  variables:
+    - APP_ID
 
 permissions:
   scopes:
@@ -55,6 +59,10 @@ modules:
       title: List breached SLA issues
       description: Returns the list of issues that have breached SLA for the provided filters
       function: rovo-list-breaches
+    - key: jira-sla-rovo-get-assignee-metrics
+      title: Get assignee SLA metrics
+      description: Returns assignee-level response, handling, and breach metrics
+      function: rovo-get-assignee-metrics
   rovo:agent:
     - key: jira-sla-agent
       name: SLA Analyst
@@ -67,6 +75,7 @@ modules:
         - jira-sla-rovo-get-summary
         - jira-sla-rovo-explain-issue
         - jira-sla-rovo-list-breaches
+        - jira-sla-rovo-get-assignee-metrics
   function:
     - key: ui-resolver
       handler: src/functions/index.uiResolver
@@ -80,6 +89,8 @@ modules:
       handler: src/functions/index.rovoExplainIssue
     - key: rovo-list-breaches
       handler: src/functions/index.rovoListBreaches
+    - key: rovo-get-assignee-metrics
+      handler: src/functions/index.rovoGetAssigneeMetrics
 
 resources:
   - key: main

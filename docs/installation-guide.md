@@ -57,9 +57,8 @@ npm install
 Optional local validation:
 
 ```bash
+npm test
 npm run build
-npm test -- --runInBand
-npm run lint
 ```
 
 ## Step 2: Authenticate Forge CLI
@@ -78,17 +77,22 @@ forge whoami
 
 ## Step 3: Register the app under your Atlassian account
 
-This repository already contains an `app.id` in `manifest.yml`.
-
-If that app is not owned by your Atlassian account, register your own copy
-before deploying:
+`manifest.yml` expects the Forge app UUID portion through the `APP_ID`
+environment variable. Register your own copy first:
 
 ```bash
 forge register
 ```
 
-This updates the app registration so you can deploy and manage it from your own
-Forge account.
+Then export the UUID printed by `forge register` before you deploy:
+
+```bash
+export APP_ID=<your-forge-app-uuid>
+```
+
+The manifest resolves that value as
+`ari:cloud:ecosystem::app/${APP_ID}` at Forge deploy time so you can manage the
+app from your own Atlassian account.
 
 ## Step 4: Deploy the app
 
