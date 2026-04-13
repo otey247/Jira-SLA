@@ -271,14 +271,14 @@ export const App = () => {
                 <button onClick={() => void saveRuleSetDraft()} disabled={saving}>Save rule set</button>
               </div>
               <div className="form-grid">
-                <label><span>Name</span><input value={ruleSetDraft.name} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, name: event.target.value } : current)} /></label>
-                <label><span>Projects</span><input value={ruleSetDraft.projectKeysText} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, projectKeysText: event.target.value } : current)} /></label>
-                <label><span>Tracked assignees</span><input value={ruleSetDraft.trackedAssigneesText} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, trackedAssigneesText: event.target.value } : current)} /></label>
-                <label><span>Tracked teams</span><input value={ruleSetDraft.trackedTeamsText} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, trackedTeamsText: event.target.value } : current)} /></label>
-                <label><span>Active statuses</span><input value={ruleSetDraft.activeStatusesText} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, activeStatusesText: event.target.value } : current)} /></label>
-                <label><span>Paused statuses</span><input value={ruleSetDraft.pausedStatusesText} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, pausedStatusesText: event.target.value } : current)} /></label>
-                <label><span>Stopped statuses</span><input value={ruleSetDraft.stoppedStatusesText} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, stoppedStatusesText: event.target.value } : current)} /></label>
-                <label><span>Resume statuses</span><input value={ruleSetDraft.resumeStatusesText} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, resumeStatusesText: event.target.value } : current)} /></label>
+                <label><span>Name</span><input value={ruleSetDraft.name ?? ''} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, name: event.target.value } : current)} /></label>
+                <label><span>Projects</span><input value={ruleSetDraft.projectKeysText ?? ''} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, projectKeysText: event.target.value } : current)} /></label>
+                <label><span>Tracked assignees</span><input value={ruleSetDraft.trackedAssigneesText ?? ''} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, trackedAssigneesText: event.target.value } : current)} /></label>
+                <label><span>Tracked teams</span><input value={ruleSetDraft.trackedTeamsText ?? ''} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, trackedTeamsText: event.target.value } : current)} /></label>
+                <label><span>Active statuses</span><input value={ruleSetDraft.activeStatusesText ?? ''} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, activeStatusesText: event.target.value } : current)} /></label>
+                <label><span>Paused statuses</span><input value={ruleSetDraft.pausedStatusesText ?? ''} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, pausedStatusesText: event.target.value } : current)} /></label>
+                <label><span>Stopped statuses</span><input value={ruleSetDraft.stoppedStatusesText ?? ''} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, stoppedStatusesText: event.target.value } : current)} /></label>
+                <label><span>Resume statuses</span><input value={ruleSetDraft.resumeStatusesText ?? ''} onChange={(event) => setRuleSetDraft((current) => current ? { ...current, resumeStatusesText: event.target.value } : current)} /></label>
               </div>
             </article>
           )}
@@ -293,12 +293,12 @@ export const App = () => {
                 <button onClick={() => void saveCalendarDraft()} disabled={saving}>Save calendar</button>
               </div>
               <div className="form-grid">
-                <label><span>Name</span><input value={calendarDraft.name} onChange={(event) => setCalendarDraft((current) => current ? { ...current, name: event.target.value } : current)} /></label>
-                <label><span>Timezone</span><input value={calendarDraft.timezone} onChange={(event) => setCalendarDraft((current) => current ? { ...current, timezone: event.target.value } : current)} /></label>
-                <label><span>Working days</span><input value={calendarDraft.workingDaysText} onChange={(event) => setCalendarDraft((current) => current ? { ...current, workingDaysText: event.target.value } : current)} /></label>
-                <label><span>Holidays</span><input value={calendarDraft.holidaysText} onChange={(event) => setCalendarDraft((current) => current ? { ...current, holidaysText: event.target.value } : current)} /></label>
-                <label><span>Business day start</span><input value={calendarDraft.workingHours.start} onChange={(event) => setCalendarDraft((current) => current ? { ...current, workingHours: { ...current.workingHours, start: event.target.value } } : current)} /></label>
-                <label><span>Business day end</span><input value={calendarDraft.workingHours.end} onChange={(event) => setCalendarDraft((current) => current ? { ...current, workingHours: { ...current.workingHours, end: event.target.value } } : current)} /></label>
+                <label><span>Name</span><input value={calendarDraft.name ?? ''} onChange={(event) => setCalendarDraft((current) => current ? { ...current, name: event.target.value } : current)} /></label>
+                <label><span>Timezone</span><input value={calendarDraft.timezone ?? ''} onChange={(event) => setCalendarDraft((current) => current ? { ...current, timezone: event.target.value } : current)} /></label>
+                <label><span>Working days</span><input value={calendarDraft.workingDaysText ?? ''} onChange={(event) => setCalendarDraft((current) => current ? { ...current, workingDaysText: event.target.value } : current)} /></label>
+                <label><span>Holidays</span><input value={calendarDraft.holidaysText ?? ''} onChange={(event) => setCalendarDraft((current) => current ? { ...current, holidaysText: event.target.value } : current)} /></label>
+                <label><span>Business day start</span><input value={calendarDraft.workingHours.start ?? ''} onChange={(event) => setCalendarDraft((current) => current ? { ...current, workingHours: { ...current.workingHours, start: event.target.value } } : current)} /></label>
+                <label><span>Business day end</span><input value={calendarDraft.workingHours.end ?? ''} onChange={(event) => setCalendarDraft((current) => current ? { ...current, workingHours: { ...current.workingHours, end: event.target.value } } : current)} /></label>
               </div>
             </article>
           )}
