@@ -1,8 +1,8 @@
 # Jira-SLA
 
-Forge-native Jira SLA tracking app that uses Jira issue history as the source of
-truth, computes deterministic SLA segments in app code, and exposes the
-precomputed results through Custom UI surfaces and Rovo actions.
+Forge-native Jira SLA tracking app that reconstructs Jira issue history into
+deterministic SLA segments and exposes the precomputed results through project,
+issue, dashboard, admin, automation, and Rovo-ready surfaces.
 
 ## Installation
 
@@ -14,9 +14,9 @@ See the installation guides:
 ## App surfaces
 
 - **Jira project page** – KPI cards, issue explorer, assignee analytics, rule
-  set administration, calendars, and manual rebuild jobs
+  set administration, calendars, and rebuild activity
 - **Jira issue panel** – per-ticket SLA state, response/active/paused metrics,
-  breach warning, and segment timeline
+  breach status, and segment timeline explanation
 - **Jira dashboard gadget** – rollup metrics by priority and assignee
 - **Scheduled trigger + automation action** – recompute summaries from Jira
   changelog updates
@@ -28,10 +28,13 @@ From the repository root:
 
 ```bash
 npm install
+npm test
 npm run build
-npm test -- --runInBand
-npm run lint
 ```
+
+The repository uses seeded Jira-like fixtures so the app can be built and
+validated locally without a live Jira tenant. Replace the in-memory store with
+Forge storage bindings when wiring the app into a deployed Forge environment.
 
 ## UI screenshots
 

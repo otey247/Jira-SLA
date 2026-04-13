@@ -1,11 +1,13 @@
 node_modules/
+resources/app/
 dist/
 build/
 .forge/
+.vite/
+coverage/
 *.js.map
 static/*/node_modules/
 static/*/build/
 static/*/dist/
 .env
 .env.local
-coverage/

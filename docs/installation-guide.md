@@ -57,9 +57,8 @@ npm install
 Optional local validation:
 
 ```bash
+npm test
 npm run build
-npm test -- --runInBand
-npm run lint
 ```
 
 ## Step 2: Authenticate Forge CLI
@@ -78,17 +77,24 @@ forge whoami
 
 ## Step 3: Register the app under your Atlassian account
 
-This repository already contains an `app.id` in `manifest.yml`.
-
-If that app is not owned by your Atlassian account, register your own copy
-before deploying:
+`manifest.yml` expects the Forge app UUID portion through the `APP_ID`
+environment variable. Register your own copy first:
 
 ```bash
 forge register
 ```
 
-This updates the app registration so you can deploy and manage it from your own
-Forge account.
+Then export the UUID printed by `forge register` before you deploy:
+
+```bash
+export APP_ID=<your-forge-app-uuid>
+```
+
+The manifest resolves that value as
+`ari:cloud:ecosystem::app/${APP_ID}` at Forge deploy time so you can manage the
+app from your own Atlassian account. You only need `APP_ID` in the shell or CI
+environment for the Forge commands you are about to run unless you want to make
+it a permanent profile setting for repeated deployments.
 
 ## Step 4: Deploy the app
 
@@ -234,18 +240,10 @@ Then deploy again.
 
 ### The app installs but no SLA data appears
 
-Check the following:
+Check that:
 
-- the Jira project key is included in a rule set
-- the rule set is linked to a business calendar
-- the issue has changelog/history available in Jira
-- the issue panel is being tested against a project covered by the rule set
-
-### The issue panel says there is no SLA data yet
-
-Use the **Rebuild Jobs** tab or wait for the next scheduled sync.
-
-### The dashboard gadget is missing
-
-Confirm the app was installed into Jira successfully and refresh the dashboard
-add-gadget dialog after installation.
+- at least one business calendar exists
+- at least one rule set is configured
+- tracked project keys match the Jira projects you expect
+- tracked statuses match the workflow states in Jira
+- the scheduled trigger has had time to process updated issues

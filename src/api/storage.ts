@@ -16,6 +16,7 @@ const key = {
   ruleSetIndex: 'rule_set::index',
   calendar: (id: string) => `business_calendar::${id}`,
   calendarIndex: 'business_calendar::index',
+  issueRuleSet: (issueKey: string) => `issue_rule_set::${issueKey}`,
   checkpoint: (ruleSetId: string, issueKey: string) =>
     `issue_checkpoint::${ruleSetId}::${issueKey}`,
   segments: (ruleSetId: string, issueKey: string) =>
@@ -133,46 +134,54 @@ export async function saveSegments(
   issueKey: string,
   segments: IssueSlaSegment[],
 ): Promise<void> {
-  await kvs.set(key.segments(ruleSetId, issueKey), segments);
+  await Promise.all([
+    kvs.set(key.segments(ruleSetId, issueKey), segments),
+    kvs.set(key.issueRuleSet(issueKey), ruleSetId),
+  ]);
 }
 
 export async function getSegments(
   issueKey: string,
   ruleSetId?: string,
 ): Promise<IssueSlaSegment[]> {
-  if (ruleSetId) {
-    return (
-      (await kvs.get<IssueSlaSegment[]>(key.segments(ruleSetId, issueKey))) ?? []
-    );
+  const resolvedRuleSetId =
+    ruleSetId ?? (await kvs.get<string>(key.issueRuleSet(issueKey))) ?? undefined;
+
+  if (!resolvedRuleSetId) {
+    return [];
   }
 
-  const allSegments = await queryByPrefix<IssueSlaSegment[]>(
-    key.segmentsPrefix(),
+  return (
+    (await kvs.get<IssueSlaSegment[]>(
+      key.segments(resolvedRuleSetId, issueKey),
+    )) ?? []
   );
-
-  return allSegments.find((segments) =>
-    segments.some((segment) => segment.issueKey === issueKey),
-  ) ?? [];
 }
 
 // ─── Issue SLA Summaries ──────────────────────────────────────────────────────
 
 export async function saveSummary(summary: IssueSummary): Promise<void> {
-  await kvs.set(key.summary(summary.ruleSetId, summary.issueKey), summary);
+  await Promise.all([
+    kvs.set(key.summary(summary.ruleSetId, summary.issueKey), summary),
+    kvs.set(key.issueRuleSet(summary.issueKey), summary.ruleSetId),
+  ]);
 }
 
 export async function getSummary(
   issueKey: string,
   ruleSetId?: string,
 ): Promise<IssueSummary | null> {
-  if (ruleSetId) {
-    return (
-      (await kvs.get<IssueSummary>(key.summary(ruleSetId, issueKey))) ?? null
-    );
+  const resolvedRuleSetId =
+    ruleSetId ?? (await kvs.get<string>(key.issueRuleSet(issueKey))) ?? undefined;
+
+  if (!resolvedRuleSetId) {
+    return null;
   }
 
-  const allSummaries = await queryByPrefix<IssueSummary>(key.summaryPrefix());
-  return allSummaries.find((summary) => summary.issueKey === issueKey) ?? null;
+  return (
+    (await kvs.get<IssueSummary>(key.summary(resolvedRuleSetId, issueKey))) ??
+    null
+  );
 }
 
 export async function listSummariesForProject(
