@@ -240,18 +240,10 @@ Then deploy again.
 
 ### The app installs but no SLA data appears
 
-Check the following:
+Check that:
 
-- the Jira project key is included in a rule set
-- the rule set is linked to a business calendar
-- the issue has changelog/history available in Jira
-- the issue panel is being tested against a project covered by the rule set
-
-### The issue panel says there is no SLA data yet
-
-Use the **Rebuild Jobs** tab or wait for the next scheduled sync.
-
-### The dashboard gadget is missing
-
-Confirm the app was installed into Jira successfully and refresh the dashboard
-add-gadget dialog after installation.
+- at least one business calendar exists
+- at least one rule set is configured
+- tracked project keys match the Jira projects you expect
+- tracked statuses match the workflow states in Jira
+- the scheduled trigger has had time to process updated issues

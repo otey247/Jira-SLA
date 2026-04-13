@@ -1,5 +1,7 @@
 app:
-  # Set APP_ID in the shell/CI environment before running Forge deploy/install.
+  # Declare APP_ID under environment.variables and set it in the shell/CI
+  # environment before running Forge deploy/install so the manifest resolves to
+  # your registered app ARI.
   id: ari:cloud:ecosystem::app/${APP_ID}
   runtime:
     name: nodejs22.x
