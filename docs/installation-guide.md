@@ -92,7 +92,9 @@ export APP_ID=<your-forge-app-uuid>
 
 The manifest resolves that value as
 `ari:cloud:ecosystem::app/${APP_ID}` at Forge deploy time so you can manage the
-app from your own Atlassian account.
+app from your own Atlassian account. You only need `APP_ID` in the shell or CI
+environment for the Forge commands you are about to run unless you want to make
+it a permanent profile setting for repeated deployments.
 
 ## Step 4: Deploy the app
 

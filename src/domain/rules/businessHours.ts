@@ -111,7 +111,9 @@ function zonedLocalTimeToUtcMs(
   const resolvedOffset = getTimezoneOffsetMs(timezone, new Date(resolvedUtc));
 
   // Resolve the offset twice so local wall-clock times stay aligned across DST
-  // boundaries, including ambiguous or skipped hours during offset changes.
+  // boundaries. If the first guess lands inside an ambiguous fall-back hour or a
+  // skipped spring-forward hour, the second lookup settles on the offset that
+  // matches the reconstructed local time for that date.
   if (resolvedOffset !== offset) {
     offset = resolvedOffset;
     resolvedUtc = baseUtc - offset;

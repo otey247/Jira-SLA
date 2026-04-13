@@ -1,4 +1,5 @@
 app:
+  # Set APP_ID in the shell/CI environment before running Forge deploy/install.
   id: ari:cloud:ecosystem::app/${APP_ID}
   runtime:
     name: nodejs22.x
