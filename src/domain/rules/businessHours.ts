@@ -110,6 +110,8 @@ function zonedLocalTimeToUtcMs(
   let resolvedUtc = baseUtc - offset;
   const resolvedOffset = getTimezoneOffsetMs(timezone, new Date(resolvedUtc));
 
+  // Resolve the offset twice so local wall-clock times stay aligned across DST
+  // boundaries, including ambiguous or skipped hours during offset changes.
   if (resolvedOffset !== offset) {
     offset = resolvedOffset;
     resolvedUtc = baseUtc - offset;
