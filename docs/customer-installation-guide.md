@@ -137,3 +137,4 @@ Refresh the Jira dashboard page and open the add-gadget dialog again.
 Use the full guide for deployment, registration, permissions, and troubleshooting:
 
 - [Technical installation guide](installation-guide.md)
+- [SLA business logic guide](sla-business-logic.md)

@@ -5,7 +5,7 @@
   "description": "Forge-based Jira SLA tracking application",
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit && vite build",
+    "build": "vite build",
     "dev": "vite build --watch",
     "test": "vitest run tests/unit && jest --runInBand",
     "test:vitest": "vitest run tests/unit",

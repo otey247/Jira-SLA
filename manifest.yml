@@ -1,8 +1,5 @@
 app:
-  # Declare APP_ID under environment.variables and set it in the shell/CI
-  # environment before running Forge deploy/install so the manifest resolves to
-  # your registered app ARI.
-  id: ari:cloud:ecosystem::app/${APP_ID}
+  id: ari:cloud:ecosystem::app/1916283a-c119-4efd-825f-6d285466ea5a
   runtime:
     name: nodejs22.x
 
@@ -31,6 +28,7 @@ modules:
   jira:issuePanel:
     - key: jira-sla-issue-panel
       title: SLA Breakdown
+      icon: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
       resource: main
       resolver:
         function: ui-resolver
@@ -38,6 +36,7 @@ modules:
     - key: jira-sla-dashboard-gadget
       title: SLA Metrics
       description: Visualize SLA metrics, breaches, and assignee performance
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
       resource: main
       resolver:
         function: ui-resolver
@@ -47,25 +46,75 @@ modules:
       interval: fiveMinute
   action:
     - key: jira-sla-automation-recompute
-      title: Recompute SLA data
+      name: Recompute SLA data
       description: Recompute the persisted SLA summary for an issue or project window
       function: automation-recompute
+      actionVerb: TRIGGER
+      inputs:
+        issueKey:
+          title: Issue key
+          type: string
+          required: false
+          description: Jira issue key to recompute, such as PROJ-123.
     - key: jira-sla-rovo-get-summary
-      title: Get issue SLA summary
+      name: Get issue SLA summary
       description: Returns the precomputed SLA summary for a given issue key
       function: rovo-get-summary
+      actionVerb: GET
+      inputs:
+        issueKey:
+          title: Issue key
+          type: string
+          required: true
+          description: Jira issue key to retrieve an SLA summary for.
     - key: jira-sla-rovo-explain-issue
-      title: Explain issue SLA timeline
+      name: Explain issue SLA timeline
       description: Returns a human-readable explanation of the SLA timeline for an issue
       function: rovo-explain-issue
+      actionVerb: GET
+      inputs:
+        issueKey:
+          title: Issue key
+          type: string
+          required: true
+          description: Jira issue key to explain.
     - key: jira-sla-rovo-list-breaches
-      title: List breached SLA issues
-      description: Returns the list of issues that have breached SLA for the provided filters
+      name: List breached SLA issues
+      description: Returns the list of issues that have breached SLA for the provided
+        filters
       function: rovo-list-breaches
+      actionVerb: GET
+      inputs:
+        projectKey:
+          title: Project key
+          type: string
+          required: true
+          description: Jira project key to search for breached issues.
+        priority:
+          title: Priority
+          type: string
+          required: false
+          description: Optional priority name to filter by.
+        assigneeAccountId:
+          title: Assignee account ID
+          type: string
+          required: false
+          description: Optional Atlassian account ID to filter by current assignee.
     - key: jira-sla-rovo-get-assignee-metrics
-      title: Get assignee SLA metrics
+      name: Get assignee SLA metrics
       description: Returns assignee-level response, handling, and breach metrics
-      function: rovo-get-assignee-metrics
+      function: rovo-assignee-metrics
+      actionVerb: GET
+      inputs:
+        projectKey:
+          title: Project key
+          type: string
+          required: true
+          description: Jira project key to summarize by assignee.
+  automation:actionProvider:
+    - key: jira-sla-automation-provider
+      actions:
+        - jira-sla-automation-recompute
   rovo:agent:
     - key: jira-sla-agent
       name: SLA Analyst
@@ -73,7 +122,7 @@ modules:
         I help analyse Jira SLA data, including response times, active handling
         time, SLA breaches, assignee performance, and ticket timeline
         explanations.
-      prompt: resource:agent-prompt
+      prompt: resource:agent-resource;agent-prompt.txt
       actions:
         - jira-sla-rovo-get-summary
         - jira-sla-rovo-explain-issue
@@ -81,22 +130,22 @@ modules:
         - jira-sla-rovo-get-assignee-metrics
   function:
     - key: ui-resolver
-      handler: src/functions/index.uiResolver
+      handler: index.uiResolver
     - key: scheduled-sync
-      handler: src/functions/index.scheduledSync
+      handler: index.scheduledSync
     - key: automation-recompute
-      handler: src/functions/index.automationRecompute
+      handler: index.automationRecompute
     - key: rovo-get-summary
-      handler: src/functions/index.rovoGetIssueSummary
+      handler: index.rovoGetIssueSummary
     - key: rovo-explain-issue
-      handler: src/functions/index.rovoExplainIssue
+      handler: index.rovoExplainIssue
     - key: rovo-list-breaches
-      handler: src/functions/index.rovoListBreaches
-    - key: rovo-get-assignee-metrics
-      handler: src/functions/index.rovoGetAssigneeMetrics
+      handler: index.rovoListBreaches
+    - key: rovo-assignee-metrics
+      handler: index.rovoGetAssigneeMetrics
 
 resources:
   - key: main
     path: resources/app
-  - key: agent-prompt
-    path: src/rovo/agent-prompt.txt
+  - key: agent-resource
+    path: src/rovo

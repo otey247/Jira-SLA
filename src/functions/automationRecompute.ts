@@ -2,6 +2,7 @@ import { syncIssueHistory } from './syncIssueHistory';
 import { listRuleSets } from '../api/storage';
 
 interface AutomationPayload {
+  issueKey?: string;
   issue?: { key: string };
 }
 
@@ -12,7 +13,7 @@ interface AutomationPayload {
 export async function automationRecompute(
   payload: AutomationPayload,
 ): Promise<{ success: boolean; message: string }> {
-  const issueKey = payload?.issue?.key;
+  const issueKey = payload?.issueKey ?? payload?.issue?.key;
 
   if (!issueKey) {
     return { success: false, message: 'No issue key provided in payload.' };

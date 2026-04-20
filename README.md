@@ -10,6 +10,7 @@ See the installation guides:
 
 - [docs/installation-guide.md](docs/installation-guide.md)
 - [docs/customer-installation-guide.md](docs/customer-installation-guide.md)
+- [docs/sla-business-logic.md](docs/sla-business-logic.md)
 
 ## App surfaces
 
