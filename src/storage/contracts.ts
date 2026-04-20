@@ -1,5 +1,7 @@
 import type {
+  AdminMetadata,
   BootstrapData,
+  BootstrapRequest,
   BusinessCalendar,
   IssueCheckpoint,
   IssueSearchFilters,
@@ -25,6 +27,7 @@ export interface ApplicationStore {
   recomputeIssue(issueKey: string, source: RebuildJob['source']): Promise<IssueSummary>;
   recomputePendingIssues(limit?: number): Promise<IssueSummary[]>;
   getCheckpoint(issueKey: string): Promise<IssueCheckpoint | undefined>;
-  getBootstrapData(surface: SurfaceKind, issueKey?: string): Promise<BootstrapData>;
+  getBootstrapData(request: BootstrapRequest): Promise<BootstrapData>;
+  getAdminMetadata(projectKeys?: string[]): Promise<AdminMetadata>;
   exportCsv(filters?: IssueSearchFilters): Promise<string>;
 }

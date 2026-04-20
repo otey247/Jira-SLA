@@ -6,6 +6,8 @@ app:
 environment:
   variables:
     - APP_ID
+    - USE_SEED_DATA
+    - TEAM_FIELD_KEY
 
 permissions:
   scopes:

@@ -37,6 +37,15 @@ The repository uses seeded Jira-like fixtures so the app can be built and
 validated locally without a live Jira tenant. Replace the in-memory store with
 Forge storage bindings when wiring the app into a deployed Forge environment.
 
+## Runtime configuration
+
+- Deployed Forge environments now default to a Jira-backed store that fetches
+  live issues, assignable users, project statuses, and team options.
+- Set `TEAM_FIELD_KEY` to the Jira custom field ID/key used to store team
+  ownership, for example `customfield_12345`.
+- Set `USE_SEED_DATA=true` when you explicitly want the seeded in-memory store
+  instead of live Jira data, such as local development or troubleshooting.
+
 ## UI screenshots
 
 ### Project page – SLA Analytics

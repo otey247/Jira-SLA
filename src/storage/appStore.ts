@@ -1,6 +1,8 @@
 import { calculateIssueSla } from '../domain/rules/engine';
 import type {
+  AdminMetadata,
   BootstrapData,
+  BootstrapRequest,
   BusinessCalendar,
   DashboardMetric,
   IssueCheckpoint,
@@ -11,10 +13,10 @@ import type {
   OverviewMetrics,
   RebuildJob,
   RuleSet,
-  SurfaceKind,
 } from '../domain/types';
 import { normalizeJiraIssue } from '../integrations/jira/normalize';
 import type { ApplicationStore } from './contracts';
+import { JiraApplicationStore } from './jiraApplicationStore';
 import { sampleCalendars, sampleIssues, sampleRuleSets } from './seed';
 
 const average = (values: number[]): number => (values.length > 0 ? Math.round(values.reduce((total, value) => total + value, 0) / values.length) : 0);
@@ -266,7 +268,40 @@ export class MemoryApplicationStore implements ApplicationStore {
     return [...counts.entries()].map(([priority, count]) => ({ priority, count }));
   }
 
-  async getBootstrapData(surface: SurfaceKind, issueKey?: string): Promise<BootstrapData> {
+  private buildAdminMetadata(): AdminMetadata {
+    const projects = [...new Set([...this.ruleSets.values()].flatMap((ruleSet) => ruleSet.projectKeys))]
+      .sort((left, right) => left.localeCompare(right))
+      .map((projectKey) => ({ value: projectKey, label: projectKey }));
+    const assignees = [...new Set([...this.ruleSets.values()].flatMap((ruleSet) => ruleSet.trackedAssignees))]
+      .sort((left, right) => left.localeCompare(right))
+      .map((assignee) => ({ value: assignee, label: assignee }));
+    const teams = [...new Set([...this.ruleSets.values()].flatMap((ruleSet) => ruleSet.trackedTeams))]
+      .sort((left, right) => left.localeCompare(right))
+      .map((team) => ({ value: team, label: team }));
+    const statuses = [...new Set(
+      [...this.ruleSets.values()].flatMap((ruleSet) => [
+        ...ruleSet.activeStatuses,
+        ...ruleSet.pausedStatuses,
+        ...ruleSet.stoppedStatuses,
+        ...ruleSet.resumeStatuses,
+      ]),
+    )].sort((left, right) => left.localeCompare(right));
+
+    return {
+      projects,
+      assignees,
+      teams,
+      statuses,
+      warnings: ['Seed mode is enabled; issue data and selector options come from local fixtures.'],
+      teamFieldConfigured: false,
+    };
+  }
+
+  async getAdminMetadata(): Promise<AdminMetadata> {
+    return this.buildAdminMetadata();
+  }
+
+  async getBootstrapData({ surface, issueKey }: BootstrapRequest): Promise<BootstrapData> {
     const summaries = await this.listIssueSummaries();
     const selectedSummary = issueKey ? await this.getIssueSummary(issueKey) : summaries[0];
     const selectedIssue = selectedSummary ? {
@@ -286,6 +321,7 @@ export class MemoryApplicationStore implements ApplicationStore {
       assigneeMetrics: this.buildAssigneeMetrics(summaries),
       teamMetrics: this.buildTeamMetrics(),
       breachMetrics: this.buildBreachMetrics(summaries),
+      adminMetadata: this.buildAdminMetadata(),
     };
   }
 
@@ -306,5 +342,15 @@ export class MemoryApplicationStore implements ApplicationStore {
   }
 }
 
-export const createApplicationStore = (): ApplicationStore => new MemoryApplicationStore();
+const shouldUseMemoryStore = (): boolean => (
+  process.env.USE_SEED_DATA === 'true'
+  || process.env.NODE_ENV === 'test'
+  || process.env.NODE_ENV === 'development'
+);
+
+export const createApplicationStore = (): ApplicationStore => (
+  shouldUseMemoryStore()
+    ? new MemoryApplicationStore()
+    : new JiraApplicationStore()
+);
 export const appStore: ApplicationStore = createApplicationStore();

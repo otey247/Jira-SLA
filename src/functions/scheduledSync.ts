@@ -1,13 +1,12 @@
-import { syncIssueHistory } from './syncIssueHistory';
-import { listRuleSets } from '../api/storage';
 import { searchIssues } from '../api/jira';
+import { appStore } from '../storage/appStore';
 
 /**
  * Scheduled trigger handler.  Iterates over all rule sets and recomputes SLA
  * summaries for recently updated issues.
  */
 export async function scheduledSync(): Promise<void> {
-  const ruleSets = await listRuleSets();
+  const ruleSets = await appStore.listRuleSets();
 
   for (const ruleSet of ruleSets) {
     for (const projectKey of ruleSet.projectKeys) {
@@ -27,10 +26,7 @@ export async function scheduledSync(): Promise<void> {
 
       for (const issue of issues) {
         try {
-          await syncIssueHistory({
-            issueKey: issue.key,
-            ruleSetId: ruleSet.ruleSetId,
-          });
+          await appStore.recomputeIssue(issue.key, 'scheduled');
         } catch (err) {
           console.error(
             `[scheduledSync] Failed to sync ${issue.key}:`,

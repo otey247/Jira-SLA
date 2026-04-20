@@ -176,6 +176,28 @@ export interface DashboardMetric {
   count: number;
 }
 
+export interface SelectorOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface AdminMetadata {
+  projects: SelectorOption[];
+  assignees: SelectorOption[];
+  teams: SelectorOption[];
+  statuses: string[];
+  warnings: string[];
+  teamFieldConfigured: boolean;
+  teamFieldKey?: string;
+}
+
+export interface BootstrapRequest {
+  surface: SurfaceKind;
+  issueKey?: string;
+  refresh?: boolean;
+}
+
 export interface BootstrapData {
   surface: SurfaceKind;
   selectedIssueKey?: string;
@@ -191,6 +213,7 @@ export interface BootstrapData {
   assigneeMetrics: DashboardMetric[];
   teamMetrics: DashboardMetric[];
   breachMetrics: Array<{ priority: string; count: number }>;
+  adminMetadata: AdminMetadata;
 }
 
 export interface IssueComputationResult {

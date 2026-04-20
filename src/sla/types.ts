@@ -192,6 +192,7 @@ export interface JiraChangelogEntry {
 
 export interface JiraChangelogItem {
   field: string;
+  fieldId?: string;
   fieldtype: string;
   from: string | null;
   fromString: string | null;

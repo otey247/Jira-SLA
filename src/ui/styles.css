@@ -49,6 +49,13 @@ button:disabled {
   align-items: flex-start;
 }
 
+.hero-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -70,6 +77,10 @@ button:disabled {
 
 .grid.two-up {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.full-span {
+  grid-column: 1 / -1;
 }
 
 .card {
@@ -144,6 +155,122 @@ input {
   border: 1px solid #c1c7d0;
   border-radius: 0.5rem;
   padding: 0.6rem 0.75rem;
+}
+
+select {
+  border: 1px solid #c1c7d0;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  background: white;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.checkbox-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #0052cc;
+  cursor: pointer;
+}
+
+.chip-fieldset {
+  border: 1px solid #dfe1e6;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  margin: 0.75rem 0 0;
+}
+
+.chip-fieldset legend {
+  font-size: 0.82rem;
+  color: #5e6c84;
+  padding: 0 0.35rem;
+}
+
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 2rem;
+  border: 1px solid #c1c7d0;
+  background: #f4f5f7;
+  color: #172b4d;
+  font-size: 0.82rem;
+  cursor: pointer;
+  font-weight: 400;
+  box-shadow: none;
+}
+
+.chip.selected {
+  background: #deebff;
+  border-color: #0052cc;
+  color: #0052cc;
+  font-weight: 600;
+}
+
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0 0 0 0.15rem;
+  font-size: 1rem;
+  color: #0052cc;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 0;
+}
+
+.holiday-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.holiday-add {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.holiday-add input[type="date"] {
+  flex: 1;
+  max-width: 200px;
+}
+
+.warning-card {
+  border: 1px solid #ffd79d;
+  background: #fff7e6;
+}
+
+.warning-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #5e6c84;
+}
+
+.selection-summary {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.75rem;
+  color: #44546f;
+  font-size: 0.9rem;
 }
 
 .error {

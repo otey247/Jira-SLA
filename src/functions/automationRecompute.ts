@@ -1,5 +1,4 @@
-import { syncIssueHistory } from './syncIssueHistory';
-import { listRuleSets } from '../api/storage';
+import { appStore } from '../storage/appStore';
 
 interface AutomationPayload {
   issueKey?: string;
@@ -20,7 +19,7 @@ export async function automationRecompute(
   }
 
   // Find the first matching rule set for this issue
-  const ruleSets = await listRuleSets();
+  const ruleSets = await appStore.listRuleSets();
   const ruleSet = ruleSets.find((rs) => {
     const projectKey = issueKey.split('-')[0];
     return rs.projectKeys.includes(projectKey) || rs.projectKeys.length === 0;
@@ -34,11 +33,7 @@ export async function automationRecompute(
   }
 
   try {
-    await syncIssueHistory({
-      issueKey,
-      ruleSetId: ruleSet.ruleSetId,
-      forceRebuild: true,
-    });
+    await appStore.recomputeIssue(issueKey, 'automation');
     return { success: true, message: `SLA recomputed for ${issueKey}.` };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
