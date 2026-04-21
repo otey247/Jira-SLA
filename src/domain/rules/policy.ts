@@ -90,7 +90,7 @@ export const shouldStartClock = (
 };
 
 const uniqueClocks = (clocks: ClockKind[]): ClockKind[] => (
-  clocks.filter((clock, index) => clocks.indexOf(clock) === index)
+  [...new Set(clocks)]
 );
 
 const resolveEnabledClocks = (

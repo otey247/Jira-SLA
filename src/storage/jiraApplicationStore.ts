@@ -386,13 +386,9 @@ export class JiraApplicationStore implements ApplicationStore {
     });
     const computation = calculateIssueSla({ snapshot, ruleSet, calendar });
     const pendingCheckpoint: IssueCheckpoint = {
-      issueKey: snapshot.issueKey,
-      ruleSetId: ruleSet.ruleSetId,
-      computeRunId: computation.checkpoint.computeRunId,
+      ...computation.checkpoint,
       lastProcessedChangelogId: changelog.at(-1)?.id ?? '',
       lastIssueUpdatedTimestamp: snapshot.updatedAt,
-      lastRecomputedAt: computation.summary.recomputedAt,
-      summaryVersion: computation.checkpoint.summaryVersion,
       needsRebuild: true,
       derivedDataStatus: 'repairable',
       integrityIssues: ['Derived write in progress.'],
@@ -449,6 +445,7 @@ export class JiraApplicationStore implements ApplicationStore {
         integrityIssues: [
           error instanceof Error ? error.message : 'Derived data write failed.',
         ],
+        lastIntegrityCheckAt: pendingCheckpoint.lastRecomputedAt,
       });
       throw error;
     }
@@ -550,7 +547,14 @@ export class JiraApplicationStore implements ApplicationStore {
     ]);
 
     const projectKey = summary?.projectKey ?? issueKey.split('-')[0];
-    const currentRuleSet = projectKey ? await this.getRuleSetForProject(projectKey) : undefined;
+    let currentRuleSet: RuleSet | undefined;
+    if (projectKey) {
+      try {
+        currentRuleSet = await this.getRuleSetForProject(projectKey);
+      } catch {
+        currentRuleSet = undefined;
+      }
+    }
 
     return validateDerivedData({
       issueKey,

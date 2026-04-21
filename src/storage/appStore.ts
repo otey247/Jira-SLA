@@ -294,7 +294,14 @@ export class MemoryApplicationStore implements ApplicationStore {
     const segments = this.segments.get(issueKey);
     const checkpoint = this.checkpoints.get(issueKey);
     const projectKey = summary?.projectKey ?? issueKey.split('-')[0];
-    const currentRuleSet = projectKey ? this.getRuleSetForProject(projectKey) : undefined;
+    let currentRuleSet: RuleSet | undefined;
+    if (projectKey) {
+      try {
+        currentRuleSet = this.getRuleSetForProject(projectKey);
+      } catch {
+        currentRuleSet = undefined;
+      }
+    }
     return validateDerivedData({
       issueKey,
       summary,

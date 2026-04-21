@@ -43,8 +43,10 @@ export const buildAggregateCache = (summaries: IssueSummary[]): AggregateDaily[]
       activeSeconds: 0,
     };
 
-    existing.computeRunId = summary.computeRunId;
-    existing.generatedAt = summary.recomputedAt;
+    if (summary.recomputedAt > existing.generatedAt) {
+      existing.computeRunId = summary.computeRunId;
+      existing.generatedAt = summary.recomputedAt;
+    }
     existing.ticketCount += 1;
     existing.responseSeconds += summary.responseSeconds;
     existing.activeSeconds += summary.activeSeconds;

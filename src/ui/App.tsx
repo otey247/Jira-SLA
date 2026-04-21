@@ -582,7 +582,7 @@ export const App = () => {
                   </select>
                 </label>
                 <label>
-                  <span>Legacy start mode</span>
+                  <span>Default start mode fallback</span>
                   <select value={ruleSetDraft.startMode} onChange={(e) => setRuleSetDraft((c) => c ? { ...c, startMode: e.target.value as StartMode } : c)}>
                     {START_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
