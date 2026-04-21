@@ -111,6 +111,13 @@ const createDefaultFieldMapping = (): FieldMapping => ({
   responsibleOrganizationFieldKey: undefined,
 });
 
+const createDetectedTeamFieldMapping = (teamFieldKey: string): FieldMapping => ({
+  ...createDefaultFieldMapping(),
+  fieldMappingId: 'detected-team-field',
+  name: 'Detected Jira team field',
+  teamFieldKey,
+});
+
 const createDefaultRuleSet = (calendarId: string): RuleSet => ({
   ruleSetId: `rule-set-${Date.now()}`,
   name: 'Default Rule Set',
@@ -316,10 +323,7 @@ export class JiraApplicationStore implements ApplicationStore {
       : (
           fallbackTeamFieldKey
             ? {
-                ...(fieldMapping ?? {
-                  fieldMappingId: 'detected-team-field',
-                  name: 'Detected Jira team field',
-                }),
+                ...(fieldMapping ?? createDetectedTeamFieldMapping(fallbackTeamFieldKey)),
                 teamFieldKey: fallbackTeamFieldKey,
               }
             : fieldMapping
