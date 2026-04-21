@@ -112,6 +112,7 @@ export const buildIssueSummary = ({
   if (currentSegment) {
     summary.currentAssignee = currentSegment.assigneeAccountId;
     summary.currentTeam = currentSegment.teamLabel;
+    summary.currentOwnership = currentSegment.ownershipLabel;
     summary.currentPriority = currentSegment.priority;
   }
 
