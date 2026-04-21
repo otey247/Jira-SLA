@@ -3,9 +3,11 @@ import {
   exportCsv,
   getAdminMetadata,
   getBootstrapData,
+  getIssueIntegrityReport,
   getIssueSummary,
   getIssueTimeline,
   markIssueForRebuild,
+  repairIssueDerivedData,
   runIssueRebuild,
   saveBusinessCalendar,
   saveFieldMapping,
@@ -45,6 +47,8 @@ resolver.define('saveBusinessCalendar', async ({ payload }) => saveBusinessCalen
 resolver.define('getAdminMetadata', async ({ payload }) => getAdminMetadata(adminMetadataPayload(payload).projectKeys ?? []));
 resolver.define('markIssueForRebuild', async ({ payload }) => markIssueForRebuild(issuePayload(payload).issueKey));
 resolver.define('runIssueRebuild', async ({ payload }) => runIssueRebuild(issuePayload(payload).issueKey));
+resolver.define('getIssueIntegrityReport', async ({ payload }) => getIssueIntegrityReport(issuePayload(payload).issueKey));
+resolver.define('repairIssueDerivedData', async ({ payload }) => repairIssueDerivedData(issuePayload(payload).issueKey));
 resolver.define('exportCsv', async ({ payload }) => exportCsv(payload ?? {}));
 
 export const uiResolver = resolver.getDefinitions();

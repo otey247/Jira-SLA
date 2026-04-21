@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { splitIntervalByBusinessHours } from '../../src/domain/rules/businessHours';
 import { calculateIssueSla } from '../../src/domain/rules/engine';
+import { buildAggregateCache } from '../../src/domain/reporting/aggregateCache';
 import { normalizeJiraIssue } from '../../src/integrations/jira/normalize';
 import { MemoryApplicationStore } from '../../src/storage/appStore';
 import { sampleCalendars, sampleIssues, sampleRuleSets } from '../../src/storage/seed';
@@ -105,6 +106,48 @@ describe('calculateIssueSla', () => {
     expect(result.summary.pausedSeconds).toBe(0);
     expect(result.segments.some((segment) => segment.segmentType === 'waiting')).toBe(true);
   });
+
+  it('supports hybrid response and handling start modes with separate clock starts', () => {
+    const snapshot = normalizeJiraIssue(sampleIssues[3]);
+    const result = calculateIssueSla({ snapshot, ruleSet, calendar });
+
+    expect(result.summary.responseStartedAt).toBe('2026-04-06T10:00:00.000Z');
+    expect(result.summary.activeStartedAt).toBe('2026-04-06T11:00:00.000Z');
+    expect(result.summary.responseSeconds).toBe(3600);
+    expect(result.summary.activeSeconds).toBe(5400);
+    expect(result.summary.effectivePolicy.responseStartMode).toBe('ownership-field');
+    expect(result.summary.effectivePolicy.activeStartMode).toBe('status');
+  });
+
+  it('preserves team continuity while splitting consultant attribution', () => {
+    const snapshot = normalizeJiraIssue(sampleIssues[1]);
+    const result = calculateIssueSla({ snapshot, ruleSet, calendar });
+
+    expect(result.summary.currentTeam).toBe('capgemini');
+    expect(result.summary.assigneeMetrics.find((metric) => metric.assigneeAccountId === 'alice')?.activeSeconds).toBeGreaterThan(0);
+    expect(result.summary.assigneeMetrics.find((metric) => metric.assigneeAccountId === 'bob')?.activeSeconds).toBeGreaterThan(0);
+    expect(result.segments.filter((segment) => segment.countsTowardActive).every((segment) => segment.teamLabel === 'capgemini')).toBe(true);
+  });
+
+  it('supports resolution-based breach policies and reports the breached clock', () => {
+    const snapshot = normalizeJiraIssue(sampleIssues[6]);
+    const result = calculateIssueSla({ snapshot, ruleSet, calendar });
+
+    expect(result.summary.effectivePolicy.breachBasis).toBe('resolution');
+    expect(result.summary.resolutionSeconds).toBeGreaterThan(0);
+    expect(result.summary.breachState).toBe('breached');
+    expect(result.summary.breachedClock).toBe('resolution');
+  });
+
+  it('builds aggregate cache rows from recomputed summaries', async () => {
+    const store = new MemoryApplicationStore();
+    const summaries = await store.listIssueSummaries({ projectKey: 'ABC' });
+    const aggregates = buildAggregateCache(summaries);
+
+    expect(aggregates.length).toBeGreaterThan(0);
+    expect(aggregates.every((aggregate) => aggregate.computeRunId)).toBe(true);
+    expect(aggregates.every((aggregate) => aggregate.ruleSetId === 'capgemini-support')).toBe(true);
+  });
 });
 
 describe('MemoryApplicationStore', () => {
@@ -135,6 +178,28 @@ describe('MemoryApplicationStore', () => {
 
     const breached = await store.listIssueSummaries({ breachState: 'breached' });
     expect(breached.length).toBeGreaterThan(0);
+  });
+
+  it('repairs inconsistent derived data by recomputing linked records', async () => {
+    const store = new MemoryApplicationStore();
+    const before = await store.getIssueIntegrityReport('ABC-123');
+
+    expect(before?.valid).toBe(true);
+
+    await store.saveRuleSet({
+      ...sampleRuleSets[0],
+      ruleSetId: sampleRuleSets[0].ruleSetId,
+    });
+
+    const stale = await store.getIssueIntegrityReport('ABC-123');
+    expect(stale?.valid).toBe(false);
+    expect(stale?.messages.some((message) => message.includes('rule-set version'))).toBe(true);
+
+    const repaired = await store.repairIssueDerivedData('ABC-123');
+    expect(repaired.repaired).toBe(true);
+
+    const after = await store.getIssueIntegrityReport('ABC-123');
+    expect(after?.valid).toBe(true);
   });
 });
 

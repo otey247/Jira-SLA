@@ -1,9 +1,14 @@
 import { calculateIssueSla } from '../domain/rules/engine';
+import { buildAggregateCache } from '../domain/reporting/aggregateCache';
+import { validateDerivedData } from '../domain/reporting/integrity';
+import { buildReportingSnapshot } from '../domain/reporting/queryPath';
 import type {
+  AggregateDaily,
   AdminMetadata,
   BootstrapData,
   BootstrapRequest,
   BusinessCalendar,
+  DerivedDataIntegrityReport,
   FieldMapping,
   DashboardMetric,
   IssueCheckpoint,
@@ -37,6 +42,7 @@ export class MemoryApplicationStore implements ApplicationStore {
   private readonly summaries = new Map<string, IssueSummary>();
   private readonly segments = new Map<string, IssueSegment[]>();
   private readonly checkpoints = new Map<string, IssueCheckpoint>();
+  private readonly aggregates = new Map<string, AggregateDaily>();
   private readonly rebuildJobs: RebuildJob[] = [];
 
   constructor({
@@ -94,10 +100,36 @@ export class MemoryApplicationStore implements ApplicationStore {
     const ruleSet = this.getRuleSetForProject(snapshot.projectKey);
     const calendar = this.getCalendar(ruleSet.businessCalendarId);
     const computation = calculateIssueSla({ snapshot, ruleSet, calendar });
+    const pendingCheckpoint: IssueCheckpoint = {
+      ...clone(computation.checkpoint),
+      needsRebuild: true,
+      derivedDataStatus: 'repairable',
+      integrityIssues: ['Derived write in progress.'],
+    };
 
+    this.checkpoints.set(issueKey, pendingCheckpoint);
     this.summaries.set(issueKey, clone(computation.summary));
     this.segments.set(issueKey, clone(computation.segments));
-    this.checkpoints.set(issueKey, clone(computation.checkpoint));
+    this.rebuildAggregatesForProject(snapshot.projectKey);
+    const integrity = validateDerivedData({
+      issueKey,
+      summary: computation.summary,
+      segments: computation.segments,
+      checkpoint: computation.checkpoint,
+      currentRuleSet: ruleSet,
+    });
+    const finalCheckpoint: IssueCheckpoint = {
+      ...clone(computation.checkpoint),
+      derivedDataStatus: integrity.status,
+      integrityIssues: integrity.valid ? [] : integrity.messages,
+      lastIntegrityCheckAt: computation.summary.recomputedAt,
+    };
+    const finalSummary = {
+      ...clone(computation.summary),
+      derivedDataStatus: integrity.status,
+    };
+    this.checkpoints.set(issueKey, finalCheckpoint);
+    this.summaries.set(issueKey, finalSummary);
     this.rebuildJobs.unshift({
       jobId: `${source}-${issueKey}-${this.rebuildJobs.length + 1}`,
       issueKey,
@@ -108,7 +140,28 @@ export class MemoryApplicationStore implements ApplicationStore {
       message: `Recomputed ${issueKey} from ${source} trigger.`,
     });
 
-    return clone(computation.summary);
+    return clone(finalSummary);
+  }
+
+  private rebuildAggregatesForProject(projectKey: string): void {
+    for (const key of [...this.aggregates.keys()]) {
+      if (key.startsWith(`${projectKey}::`)) {
+        this.aggregates.delete(key);
+      }
+    }
+
+    const projectSummaries = [...this.summaries.values()].filter(
+      (summary) => summary.projectKey === projectKey,
+    );
+    for (const aggregate of buildAggregateCache(projectSummaries)) {
+      this.aggregates.set(`${projectKey}::${aggregate.aggregateId}`, clone(aggregate));
+    }
+  }
+
+  private listAggregatesForProject(projectKey: string): AggregateDaily[] {
+    return [...this.aggregates.entries()]
+      .filter(([key]) => key.startsWith(`${projectKey}::`))
+      .map(([, aggregate]) => clone(aggregate));
   }
 
   async listRuleSets(): Promise<RuleSet[]> {
@@ -236,57 +289,39 @@ export class MemoryApplicationStore implements ApplicationStore {
     return checkpoint ? clone(checkpoint) : undefined;
   }
 
-  private buildOverview(summaries: IssueSummary[]): OverviewMetrics {
+  async getIssueIntegrityReport(issueKey: string): Promise<DerivedDataIntegrityReport | undefined> {
+    const summary = this.summaries.get(issueKey);
+    const segments = this.segments.get(issueKey);
+    const checkpoint = this.checkpoints.get(issueKey);
+    const projectKey = summary?.projectKey ?? issueKey.split('-')[0];
+    const currentRuleSet = projectKey ? this.getRuleSetForProject(projectKey) : undefined;
+    return validateDerivedData({
+      issueKey,
+      summary,
+      segments,
+      checkpoint,
+      currentRuleSet,
+    });
+  }
+
+  async repairIssueDerivedData(issueKey: string): Promise<DerivedDataIntegrityReport> {
+    const before = await this.getIssueIntegrityReport(issueKey);
+    const repairedSummary = this.recomputeIssueSync(issueKey, 'manual');
+    const after = await this.getIssueIntegrityReport(issueKey);
+
     return {
-      issueCount: summaries.length,
-      breachCount: summaries.filter((summary) => summary.breachState === 'breached').length,
-      averageResponseSeconds: average(summaries.map((summary) => summary.responseSeconds)),
-      averageActiveSeconds: average(summaries.map((summary) => summary.activeSeconds)),
-      totalPausedSeconds: summaries.reduce((total, summary) => total + summary.pausedSeconds, 0),
+      issueKey,
+      computeRunId: repairedSummary.computeRunId,
+      valid: Boolean(after?.valid),
+      status: after?.status ?? 'repairable',
+      repaired: true,
+      messages: before?.valid
+        ? ['Derived data was already consistent; the repair action refreshed the aggregate cache and linked records.']
+        : [
+            ...(before?.messages ?? ['Derived data required repair.']),
+            'Derived summary, segments, checkpoint, and aggregate cache were rebuilt together.',
+          ],
     };
-  }
-
-  private buildAssigneeMetrics(summaries: IssueSummary[]): DashboardMetric[] {
-    const totals = new Map<string, { total: number; count: number }>();
-    for (const summary of summaries) {
-      for (const metric of summary.assigneeMetrics) {
-        const current = totals.get(metric.assigneeAccountId) ?? { total: 0, count: 0 };
-        current.total += metric.activeSeconds;
-        current.count += 1;
-        totals.set(metric.assigneeAccountId, current);
-      }
-    }
-    return [...totals.entries()].map(([label, value]) => ({
-      label,
-      valueSeconds: average([value.total / Math.max(value.count, 1)]),
-      count: value.count,
-    })).sort((left, right) => right.valueSeconds - left.valueSeconds);
-  }
-
-  private buildTeamMetrics(): DashboardMetric[] {
-    const totals = new Map<string, { total: number; count: number }>();
-    for (const segments of this.segments.values()) {
-      for (const segment of segments.filter((entry) => entry.countsTowardActive)) {
-        const label = segment.teamLabel ?? 'unmapped';
-        const current = totals.get(label) ?? { total: 0, count: 0 };
-        current.total += segment.businessSeconds;
-        current.count += 1;
-        totals.set(label, current);
-      }
-    }
-    return [...totals.entries()].map(([label, value]) => ({
-      label,
-      valueSeconds: average([value.total / Math.max(value.count, 1)]),
-      count: value.count,
-    }));
-  }
-
-  private buildBreachMetrics(summaries: IssueSummary[]): Array<{ priority: string; count: number }> {
-    const counts = new Map<string, number>();
-    for (const summary of summaries.filter((item) => item.breachState === 'breached')) {
-      counts.set(summary.currentPriority, (counts.get(summary.currentPriority) ?? 0) + 1);
-    }
-    return [...counts.entries()].map(([priority, count]) => ({ priority, count }));
   }
 
   private buildAdminMetadata(): AdminMetadata {
@@ -358,6 +393,14 @@ export class MemoryApplicationStore implements ApplicationStore {
       summary: selectedSummary,
       segments: await this.getIssueSegments(selectedSummary.issueKey),
     } : undefined;
+    const projectKey = selectedSummary?.projectKey ?? summaries[0]?.projectKey;
+    const reporting = buildReportingSnapshot({
+      summaries,
+      aggregates: projectKey ? this.listAggregatesForProject(projectKey) : [],
+    });
+    const selectedIssueIntegrity = selectedSummary
+      ? await this.getIssueIntegrityReport(selectedSummary.issueKey)
+      : undefined;
 
     return {
       surface,
@@ -368,17 +411,19 @@ export class MemoryApplicationStore implements ApplicationStore {
       fieldMappings: await this.listFieldMappings(),
       calendars: await this.listCalendars(),
       rebuildJobs: await this.listRebuildJobs(),
-      overview: this.buildOverview(summaries),
-      assigneeMetrics: this.buildAssigneeMetrics(summaries),
-      teamMetrics: this.buildTeamMetrics(),
-      breachMetrics: this.buildBreachMetrics(summaries),
+      overview: reporting.overview,
+      assigneeMetrics: reporting.assigneeMetrics,
+      teamMetrics: reporting.teamMetrics,
+      breachMetrics: reporting.breachMetrics,
+      reportingDataSources: reporting.reportingDataSources,
       adminMetadata: this.buildAdminMetadata(),
+      selectedIssueIntegrity,
     };
   }
 
   async exportCsv(filters: IssueSearchFilters = {}): Promise<string> {
     const summaries = await this.listIssueSummaries(filters);
-    const header = 'Issue Key,Summary,Priority,Current State,Response Seconds,Active Seconds,Paused Seconds,Breach State';
+    const header = 'Issue Key,Summary,Priority,Current State,Response Seconds,Active Seconds,Paused Seconds,Waiting Seconds,Combined Seconds,Resolution Seconds,Breach State,Breach Basis,Breached Clock,Compute Run ID';
     const rows = summaries.map((summary) => [
       summary.issueKey,
       JSON.stringify(summary.summary),
@@ -387,7 +432,13 @@ export class MemoryApplicationStore implements ApplicationStore {
       summary.responseSeconds,
       summary.activeSeconds,
       summary.pausedSeconds,
+      summary.waitingSeconds,
+      summary.combinedSeconds,
+      summary.resolutionSeconds,
       summary.breachState,
+      summary.effectivePolicy.breachBasis,
+      summary.breachedClock ?? '',
+      summary.computeRunId,
     ].join(','));
     return [header, ...rows].join('\n');
   }

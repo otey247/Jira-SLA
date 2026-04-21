@@ -10,7 +10,15 @@ import type {
   TimingMode,
   WorkingState,
 } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 import { secondsBetween, splitIntervalByBusinessHours } from './businessHours';
+import {
+  getEffectiveSlaPolicy,
+  isActiveStatus,
+  isTrackedOwnership,
+  resolveTrackedOwnershipSource,
+  shouldStartClock,
+} from './policy';
 import { shouldResumeFromStatusPause } from './stateMachine';
 
 interface IntervalClassification {
@@ -19,72 +27,11 @@ interface IntervalClassification {
   timingMode: TimingMode;
 }
 
-const isTrackedAssignee = (state: WorkingState, ruleSet: RuleSet): boolean => (
-  Boolean(state.assigneeAccountId && ruleSet.trackedAssignees.includes(state.assigneeAccountId))
-);
-
-const isTrackedTeam = (state: WorkingState, ruleSet: RuleSet): boolean => (
-  Boolean(state.teamLabel && ruleSet.trackedTeams.includes(state.teamLabel))
-);
-
-const isTrackedOwnershipField = (state: WorkingState, ruleSet: RuleSet): boolean => (
-  Boolean(state.ownershipLabel && ruleSet.trackedOwnershipValues.includes(state.ownershipLabel))
-);
-
-const resolveTrackedOwnershipSource = (state: WorkingState, ruleSet: RuleSet): string | undefined => {
-  const precedence = ruleSet.ownershipPrecedence.length > 0
-    ? ruleSet.ownershipPrecedence
-    : ['ownership', 'team', 'assignee'];
-
-  if (
-    ruleSet.trackedAssignees.length === 0
-    && ruleSet.trackedTeams.length === 0
-    && ruleSet.trackedOwnershipValues.length === 0
-  ) {
-    return state.ownershipLabel ?? state.teamLabel ?? state.assigneeAccountId;
-  }
-
-  for (const source of precedence) {
-    if (source === 'ownership' && isTrackedOwnershipField(state, ruleSet)) {
-      return state.ownershipLabel;
-    }
-    if (source === 'team' && isTrackedTeam(state, ruleSet)) {
-      return state.teamLabel;
-    }
-    if (source === 'assignee' && isTrackedAssignee(state, ruleSet)) {
-      return state.assigneeAccountId;
-    }
-  }
-
-  return undefined;
-};
-
-const isTrackedOwnership = (state: WorkingState, ruleSet: RuleSet): boolean => (
-  Boolean(resolveTrackedOwnershipSource(state, ruleSet))
-);
-
-const isActiveStatus = (state: WorkingState, ruleSet: RuleSet): boolean => ruleSet.activeStatuses.includes(state.status);
 const isPausedStatus = (state: WorkingState, ruleSet: RuleSet): boolean => ruleSet.pausedStatuses.includes(state.status);
 const isStoppedStatus = (state: WorkingState, ruleSet: RuleSet): boolean => state.resolved || ruleSet.stoppedStatuses.includes(state.status);
 
 const getTimingMode = (state: WorkingState, ruleSet: RuleSet, calendar: BusinessCalendar): TimingMode => {
-  const override = ruleSet.priorityOverrides.find((item) => item.priority === state.priority);
-  return override?.timingMode ?? ruleSet.defaultTimingMode ?? calendar.afterHoursMode;
-};
-
-const shouldStartSla = (state: WorkingState, ruleSet: RuleSet): boolean => {
-  switch (ruleSet.startMode) {
-    case 'assignment':
-      return isTrackedOwnership(state, ruleSet);
-    case 'status':
-      return isActiveStatus(state, ruleSet);
-    case 'assignment-or-status':
-      return isTrackedOwnership(state, ruleSet) || isActiveStatus(state, ruleSet);
-    case 'ownership-field':
-      return Boolean(resolveTrackedOwnershipSource(state, ruleSet));
-    default:
-      return false;
-  }
+  return getEffectiveSlaPolicy(ruleSet, state.priority, calendar.afterHoursMode).timingMode;
 };
 
 const describeWaitingReason = (): string => {
@@ -103,11 +50,15 @@ const classifyInterval = (
   state: WorkingState,
   ruleSet: RuleSet,
   calendar: BusinessCalendar,
-  hasStarted: boolean,
-  hasSeenActive: boolean,
+  responseStartedAt: string | undefined,
+  activeStartedAt: string | undefined,
   statusPauseGate: { pausedStatus: string } | null,
 ): IntervalClassification => {
   const timingMode = getTimingMode(state, ruleSet, calendar);
+  const policy = getEffectiveSlaPolicy(ruleSet, state.priority, calendar.afterHoursMode);
+  const responseEnabled = policy.enabledClocks.includes('response');
+  const activeEnabled = policy.enabledClocks.includes('active');
+  const hasStarted = Boolean(responseStartedAt || activeStartedAt);
 
   if (!hasStarted) {
     return {
@@ -149,7 +100,7 @@ const classifyInterval = (
     };
   }
 
-  if (isActiveStatus(state, ruleSet)) {
+  if (activeEnabled && activeStartedAt) {
     return {
       baseType: 'active',
       reason: `Active handling time is accruing because status ${state.status} is configured as active and ownership is tracked.`,
@@ -157,7 +108,7 @@ const classifyInterval = (
     };
   }
 
-  if (!hasSeenActive) {
+  if (responseEnabled && responseStartedAt && !activeStartedAt) {
     return {
       baseType: 'response',
       reason: 'Response SLA is accruing while the issue is assigned to tracked ownership and waiting for first active work.',
@@ -254,6 +205,7 @@ const emitSegmentsForInterval = ({
   endedAt,
   sourceEventStart,
   sourceEventEnd,
+  computeRunId,
 }: {
   segments: IssueSegment[];
   snapshot: IssueSnapshot;
@@ -265,6 +217,7 @@ const emitSegmentsForInterval = ({
   endedAt: string;
   sourceEventStart: string;
   sourceEventEnd: string;
+  computeRunId: string;
 }): void => {
   if (classification.baseType !== 'active' && classification.baseType !== 'response') {
     const rawSeconds = secondsBetween(new Date(startedAt), new Date(endedAt));
@@ -272,6 +225,7 @@ const emitSegmentsForInterval = ({
       issueKey: snapshot.issueKey,
       ruleSetId: ruleSet.ruleSetId,
       ruleVersion: ruleSet.version,
+      computeRunId,
       assigneeAccountId: state.assigneeAccountId,
       teamLabel: state.teamLabel,
       ownershipLabel: state.ownershipLabel,
@@ -297,6 +251,7 @@ const emitSegmentsForInterval = ({
       issueKey: snapshot.issueKey,
       ruleSetId: ruleSet.ruleSetId,
       ruleVersion: ruleSet.version,
+      computeRunId,
       assigneeAccountId: state.assigneeAccountId,
       teamLabel: state.teamLabel,
       ownershipLabel: state.ownershipLabel,
@@ -321,6 +276,7 @@ const emitSegmentsForInterval = ({
       issueKey: snapshot.issueKey,
       ruleSetId: ruleSet.ruleSetId,
       ruleVersion: ruleSet.version,
+      computeRunId,
       assigneeAccountId: state.assigneeAccountId,
       teamLabel: state.teamLabel,
       ownershipLabel: state.ownershipLabel,
@@ -353,11 +309,20 @@ export const calculateIssueSla = ({
 }): IssueComputationResult => {
   const events = [...snapshot.events].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
   const segments: IssueSegment[] = [];
+  const computeRunId = uuidv4();
   let state: WorkingState = { ...snapshot.initialState };
   let cursor = snapshot.createdAt;
   let previousEventId = 'issue-created';
-  let slaStartedAt = shouldStartSla(state, ruleSet) ? snapshot.createdAt : undefined;
-  let hasSeenActive = false;
+  const initialPolicy = getEffectiveSlaPolicy(ruleSet, state.priority, calendar.afterHoursMode);
+  let responseStartedAt = initialPolicy.enabledClocks.includes('response')
+    && shouldStartClock(state, ruleSet, initialPolicy.responseStartMode)
+      ? snapshot.createdAt
+      : undefined;
+  let activeStartedAt = initialPolicy.enabledClocks.includes('active')
+    && shouldStartClock(state, ruleSet, initialPolicy.activeStartMode)
+      ? snapshot.createdAt
+      : undefined;
+  let slaStartedAt = responseStartedAt ?? activeStartedAt;
   let statusPauseGate: { pausedStatus: string } | null = null;
 
   for (const event of [...events, {
@@ -371,13 +336,10 @@ export const calculateIssueSla = ({
         state,
         ruleSet,
         calendar,
-        Boolean(slaStartedAt),
-        hasSeenActive,
+        responseStartedAt,
+        activeStartedAt,
         statusPauseGate,
       );
-      if (classification.baseType === 'active') {
-        hasSeenActive = true;
-      }
       emitSegmentsForInterval({
         segments,
         snapshot,
@@ -389,14 +351,29 @@ export const calculateIssueSla = ({
         endedAt: event.timestamp,
         sourceEventStart: previousEventId,
         sourceEventEnd: event.changelogId,
+        computeRunId,
       });
     }
 
     if (event.changelogId !== 'issue-terminal') {
       state = applyEvent(state, event);
       previousEventId = event.changelogId;
-      if (!slaStartedAt && shouldStartSla(state, ruleSet)) {
-        slaStartedAt = event.timestamp;
+      const policy = getEffectiveSlaPolicy(ruleSet, state.priority, calendar.afterHoursMode);
+      if (
+        !responseStartedAt
+        && policy.enabledClocks.includes('response')
+        && shouldStartClock(state, ruleSet, policy.responseStartMode)
+      ) {
+        responseStartedAt = event.timestamp;
+        slaStartedAt = slaStartedAt ?? responseStartedAt;
+      }
+      if (
+        !activeStartedAt
+        && policy.enabledClocks.includes('active')
+        && shouldStartClock(state, ruleSet, policy.activeStartMode)
+      ) {
+        activeStartedAt = event.timestamp;
+        slaStartedAt = slaStartedAt ?? activeStartedAt;
       }
       if (isPausedStatus(state, ruleSet)) {
         statusPauseGate = { pausedStatus: state.status };
@@ -411,10 +388,7 @@ export const calculateIssueSla = ({
           resumeRules: ruleSet.resumeRules,
         })
       ) {
-        statusPauseGate = null;
-      }
-      if (isActiveStatus(state, ruleSet)) {
-        hasSeenActive = true;
+          statusPauseGate = null;
       }
     }
 
@@ -427,7 +401,10 @@ export const calculateIssueSla = ({
     calendar,
     segments,
     slaStartedAt,
+    responseStartedAt,
+    activeStartedAt,
     recomputedAt,
+    computeRunId,
   });
 
   return {
@@ -436,11 +413,14 @@ export const calculateIssueSla = ({
     checkpoint: {
       issueKey: snapshot.issueKey,
       ruleSetId: ruleSet.ruleSetId,
+      computeRunId,
       lastProcessedChangelogId: events.at(-1)?.changelogId ?? 'issue-created',
       lastIssueUpdatedTimestamp: snapshot.updatedAt,
       lastRecomputedAt: recomputedAt,
       summaryVersion: ruleSet.version,
       needsRebuild: false,
+      derivedDataStatus: 'complete',
+      integrityIssues: [],
     },
   };
 };

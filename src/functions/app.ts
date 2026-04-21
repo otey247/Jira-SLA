@@ -23,4 +23,6 @@ export const saveBusinessCalendar = async (calendar: BusinessCalendar) => appSto
 export const getAdminMetadata = async (projectKeys?: string[]): Promise<AdminMetadata> => appStore.getAdminMetadata(projectKeys);
 export const markIssueForRebuild = async (issueKey: string) => appStore.markIssueForRebuild(issueKey);
 export const runIssueRebuild = async (issueKey: string) => appStore.recomputeIssue(issueKey, 'manual');
+export const getIssueIntegrityReport = async (issueKey: string) => appStore.getIssueIntegrityReport(issueKey);
+export const repairIssueDerivedData = async (issueKey: string) => appStore.repairIssueDerivedData(issueKey);
 export const exportCsv = async (filters: IssueSearchFilters) => appStore.exportCsv(filters);

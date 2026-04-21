@@ -36,11 +36,11 @@ view of what is implemented, partially implemented, planned, or deferred.
 
 | Epic | Status | Notes |
 | --- | --- | --- |
-| Reliability and derived-data integrity | Planned | Persistence coordination, repair flows, and integrity checks still pending |
-| Aggregate cache hardening | Partial | Aggregate types exist, but recompute/reporting cache flows still need hardening |
-| Multi-clock SLA policy | Planned | Separate breach basis and clock selection are not implemented yet |
-| Customer golden fixtures | Partial | Milestone 1 scenarios are covered; broader scenario catalog is still pending |
-| Advanced reporting data-source clarity | Planned | Reporting fallback and aggregate/source documentation still pending |
+| Reliability and derived-data integrity | Implemented | Compute runs now link summaries, segments, checkpoints, and aggregate rows; repairable writes and integrity diagnostics are available |
+| Aggregate cache hardening | Implemented | Recompute refreshes aggregate cache rows and reporting surfaces can read them deterministically |
+| Multi-clock SLA policy | Implemented | Rule sets and priority overrides now control response/handling starts, enabled clocks, and breach basis |
+| Customer golden fixtures | Implemented | Seeded scenarios and unit tests cover ownership transfer, handoff, pause/resume, weekend, and breach-basis variants |
+| Advanced reporting data-source clarity | Implemented | UI and code now state whether widgets are reading aggregate cache or summary fallback |
 
 ## Deferred / not in current scope
 

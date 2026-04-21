@@ -4,6 +4,8 @@ export type StartMode =
   | 'status'
   | 'assignment-or-status'
   | 'ownership-field';
+export type ClockKind = 'response' | 'active';
+export type BreachBasis = ClockKind | 'combined' | 'resolution';
 export type SegmentType =
   | 'untracked'
   | 'response'
@@ -15,6 +17,8 @@ export type SegmentType =
 export type BreachState = 'healthy' | 'warning' | 'breached';
 export type SurfaceKind = 'projectPage' | 'issuePanel' | 'dashboardGadget';
 export type OwnershipSource = 'ownership' | 'team' | 'assignee';
+export type DerivedDataStatus = 'complete' | 'repairable';
+export type ReportingDataSource = 'aggregate-cache' | 'issue-summaries';
 
 export interface ResumeRule {
   fromStatus?: string;
@@ -26,6 +30,10 @@ export interface PriorityOverride {
   timingMode?: TimingMode;
   responseThresholdSeconds?: number;
   activeThresholdSeconds?: number;
+  combinedThresholdSeconds?: number;
+  resolutionThresholdSeconds?: number;
+  enabledClocks?: ClockKind[];
+  breachBasis?: BreachBasis;
 }
 
 export interface FieldMapping {
@@ -51,6 +59,8 @@ export interface RuleSet {
   trackedOwnershipValues: string[];
   ownershipPrecedence: OwnershipSource[];
   startMode: StartMode;
+  responseStartMode?: StartMode;
+  activeStartMode?: StartMode;
   activeStatuses: string[];
   pausedStatuses: string[];
   stoppedStatuses: string[];
@@ -60,8 +70,12 @@ export interface RuleSet {
   priorityOverrides: PriorityOverride[];
   enabled: boolean;
   defaultTimingMode: TimingMode;
+  enabledClocks: ClockKind[];
+  breachBasis: BreachBasis;
   defaultResponseThresholdSeconds: number;
   defaultActiveThresholdSeconds: number;
+  defaultCombinedThresholdSeconds?: number;
+  defaultResolutionThresholdSeconds?: number;
 }
 
 export interface BusinessCalendar {
@@ -120,6 +134,7 @@ export interface IssueSegment {
   issueKey: string;
   ruleSetId: string;
   ruleVersion: number;
+  computeRunId: string;
   assigneeAccountId?: string;
   teamLabel?: string;
   ownershipLabel?: string;
@@ -150,19 +165,27 @@ export interface IssueSummary {
   summary: string;
   ruleSetId: string;
   ruleVersion: number;
+  computeRunId: string;
+  derivedDataStatus: DerivedDataStatus;
   currentState: SegmentType;
   responseSeconds: number;
   activeSeconds: number;
   pausedSeconds: number;
   waitingSeconds: number;
   outsideHoursSeconds: number;
+  combinedSeconds: number;
+  resolutionSeconds: number;
   breachState: BreachState;
+  breachedClock?: BreachBasis;
+  effectivePolicy: EffectiveSlaPolicy;
   currentAssignee?: string;
   currentTeam?: string;
   currentOwnership?: string;
   currentPriority: string;
   recomputedAt: string;
   slaStartedAt?: string;
+  responseStartedAt?: string;
+  activeStartedAt?: string;
   timelineExplanation: string[];
   assigneeMetrics: AssigneeMetric[];
 }
@@ -170,16 +193,24 @@ export interface IssueSummary {
 export interface IssueCheckpoint {
   issueKey: string;
   ruleSetId: string;
+   computeRunId: string;
   lastProcessedChangelogId: string;
   lastIssueUpdatedTimestamp: string;
   lastRecomputedAt: string;
   summaryVersion: number;
   needsRebuild: boolean;
+  derivedDataStatus: DerivedDataStatus;
+  integrityIssues: string[];
+  lastIntegrityCheckAt?: string;
 }
 
 export interface AggregateDaily {
+  aggregateId: string;
   date: string;
   projectKey: string;
+  ruleSetId: string;
+  computeRunId: string;
+  generatedAt: string;
   assigneeAccountId?: string;
   teamLabel?: string;
   priority: string;
@@ -197,6 +228,34 @@ export interface RebuildJob {
   createdAt: string;
   completedAt?: string;
   message: string;
+}
+
+export interface EffectiveSlaPolicy {
+  timingMode: TimingMode;
+  responseStartMode: StartMode;
+  activeStartMode: StartMode;
+  enabledClocks: ClockKind[];
+  breachBasis: BreachBasis;
+  responseThresholdSeconds: number;
+  activeThresholdSeconds: number;
+  combinedThresholdSeconds?: number;
+  resolutionThresholdSeconds?: number;
+}
+
+export interface ReportingDataSourceStatus {
+  widget: 'overview' | 'assigneeMetrics' | 'teamMetrics' | 'breachMetrics';
+  source: ReportingDataSource;
+  fallbackUsed: boolean;
+  detail: string;
+}
+
+export interface DerivedDataIntegrityReport {
+  issueKey: string;
+  computeRunId?: string;
+  valid: boolean;
+  status: DerivedDataStatus;
+  repaired: boolean;
+  messages: string[];
 }
 
 export interface IssueSearchFilters {
@@ -266,7 +325,9 @@ export interface BootstrapData {
   assigneeMetrics: DashboardMetric[];
   teamMetrics: DashboardMetric[];
   breachMetrics: Array<{ priority: string; count: number }>;
+  reportingDataSources: ReportingDataSourceStatus[];
   adminMetadata: AdminMetadata;
+  selectedIssueIntegrity?: DerivedDataIntegrityReport;
 }
 
 export interface IssueComputationResult {

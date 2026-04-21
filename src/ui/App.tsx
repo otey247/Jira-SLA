@@ -3,9 +3,12 @@ import { invoke, view } from '@forge/bridge';
 import { formatDuration } from '../domain/rules/businessHours';
 import type {
   BootstrapData,
+  BreachBasis,
   BootstrapRequest,
   BusinessCalendar,
+  ClockKind,
   FieldMapping,
+  PriorityOverride,
   ResumeRule,
   RuleSet,
   SelectorOption,
@@ -47,6 +50,18 @@ const START_MODE_OPTIONS: { value: StartMode; label: string }[] = [
   { value: 'status', label: 'Status change' },
   { value: 'assignment-or-status', label: 'Assignment or Status' },
   { value: 'ownership-field', label: 'Ownership field' },
+];
+
+const CLOCK_OPTIONS: { value: ClockKind; label: string }[] = [
+  { value: 'response', label: 'Response' },
+  { value: 'active', label: 'Active handling' },
+];
+
+const BREACH_BASIS_OPTIONS: { value: BreachBasis; label: string }[] = [
+  { value: 'response', label: 'Response clock' },
+  { value: 'active', label: 'Active clock' },
+  { value: 'combined', label: 'Combined counted time' },
+  { value: 'resolution', label: 'Resolution elapsed time' },
 ];
 
 const DAY_LABELS: { value: number; label: string }[] = [
@@ -134,6 +149,69 @@ const parseResumeRules = (value: string): ResumeRule[] => (
       };
     })
     .filter((rule) => rule.toStatus)
+);
+
+const stringifyPriorityOverrides = (priorityOverrides: PriorityOverride[]): string => (
+  priorityOverrides
+    .map((override) => [
+      override.priority,
+      `timing=${override.timingMode ?? ''}`,
+      `clocks=${(override.enabledClocks ?? []).join(',')}`,
+      `breach=${override.breachBasis ?? ''}`,
+      `response=${override.responseThresholdSeconds ?? ''}`,
+      `active=${override.activeThresholdSeconds ?? ''}`,
+      `combined=${override.combinedThresholdSeconds ?? ''}`,
+      `resolution=${override.resolutionThresholdSeconds ?? ''}`,
+    ].join(' | '))
+    .join('\n')
+);
+
+const parsePriorityOverrides = (value: string): PriorityOverride[] => (
+  value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [priorityPart, ...parts] = line.split('|').map((part) => part.trim());
+      const parsed: PriorityOverride = { priority: priorityPart };
+      for (const part of parts) {
+        const [rawKey, rawValue] = part.split('=').map((item) => item.trim());
+        const key = rawKey?.toLowerCase();
+        const valuePart = rawValue?.trim();
+        if (!key) {
+          continue;
+        }
+
+        if (key === 'timing' && valuePart && TIMING_MODE_OPTIONS.some((option) => option.value === valuePart)) {
+          parsed.timingMode = valuePart as TimingMode;
+        }
+        if (key === 'clocks') {
+          parsed.enabledClocks = valuePart
+            ? valuePart
+              .split(',')
+              .map((item) => item.trim())
+              .filter((item): item is ClockKind => CLOCK_OPTIONS.some((option) => option.value === item))
+            : [];
+        }
+        if (key === 'breach' && valuePart && BREACH_BASIS_OPTIONS.some((option) => option.value === valuePart)) {
+          parsed.breachBasis = valuePart as BreachBasis;
+        }
+        if (key === 'response') {
+          parsed.responseThresholdSeconds = valuePart ? Number(valuePart) : undefined;
+        }
+        if (key === 'active') {
+          parsed.activeThresholdSeconds = valuePart ? Number(valuePart) : undefined;
+        }
+        if (key === 'combined') {
+          parsed.combinedThresholdSeconds = valuePart ? Number(valuePart) : undefined;
+        }
+        if (key === 'resolution') {
+          parsed.resolutionThresholdSeconds = valuePart ? Number(valuePart) : undefined;
+        }
+      }
+      return parsed;
+    })
+    .filter((override) => override.priority)
 );
 
 export const App = () => {
@@ -366,13 +444,60 @@ export const App = () => {
             </div>
             <dl className="detail-grid">
               <div><dt>SLA start</dt><dd>{selectedSummary.slaStartedAt ?? 'Not started'}</dd></div>
+              <div><dt>Response start</dt><dd>{selectedSummary.responseStartedAt ?? 'Disabled / not started'}</dd></div>
+              <div><dt>Handling start</dt><dd>{selectedSummary.activeStartedAt ?? 'Disabled / not started'}</dd></div>
               <div><dt>Response</dt><dd>{formatDuration(selectedSummary.responseSeconds)}</dd></div>
                 <div><dt>Active</dt><dd>{formatDuration(selectedSummary.activeSeconds)}</dd></div>
                 <div><dt>Paused</dt><dd>{formatDuration(selectedSummary.pausedSeconds)}</dd></div>
                 <div><dt>Waiting</dt><dd>{formatDuration(selectedSummary.waitingSeconds)}</dd></div>
                 <div><dt>Outside hours</dt><dd>{formatDuration(selectedSummary.outsideHoursSeconds)}</dd></div>
+                <div><dt>Combined</dt><dd>{formatDuration(selectedSummary.combinedSeconds)}</dd></div>
+                <div><dt>Resolution elapsed</dt><dd>{formatDuration(selectedSummary.resolutionSeconds)}</dd></div>
                 <div><dt>Breach state</dt><dd>{selectedSummary.breachState}</dd></div>
+                <div><dt>Breached clock</dt><dd>{selectedSummary.breachedClock ?? 'None'}</dd></div>
               </dl>
+            <div className="selection-summary">
+              <strong>Effective policy</strong>
+              <ul className="warning-list">
+                <li>Response start: {selectedSummary.effectivePolicy.responseStartMode}</li>
+                <li>Handling start: {selectedSummary.effectivePolicy.activeStartMode}</li>
+                <li>Enabled clocks: {selectedSummary.effectivePolicy.enabledClocks.join(', ') || 'none'}</li>
+                <li>Breach basis: {selectedSummary.effectivePolicy.breachBasis}</li>
+                <li>Timing mode: {selectedSummary.effectivePolicy.timingMode}</li>
+                <li>Response target: {formatDuration(selectedSummary.effectivePolicy.responseThresholdSeconds)}</li>
+                <li>Active target: {formatDuration(selectedSummary.effectivePolicy.activeThresholdSeconds)}</li>
+                <li>Combined target: {selectedSummary.effectivePolicy.combinedThresholdSeconds ? formatDuration(selectedSummary.effectivePolicy.combinedThresholdSeconds) : 'Not set'}</li>
+                <li>Resolution target: {selectedSummary.effectivePolicy.resolutionThresholdSeconds ? formatDuration(selectedSummary.effectivePolicy.resolutionThresholdSeconds) : 'Not set'}</li>
+              </ul>
+            </div>
+            {data.selectedIssueIntegrity ? (
+              <div className={data.selectedIssueIntegrity.valid ? 'selection-summary' : 'selection-summary error'}>
+                <div className="section-header">
+                  <div>
+                    <strong>Derived data integrity</strong>
+                    <p>{data.selectedIssueIntegrity.status} · run {data.selectedIssueIntegrity.computeRunId ?? 'n/a'}</p>
+                  </div>
+                  <button
+                    className="secondary"
+                    onClick={() => void (async () => {
+                      setSaving(true);
+                      try {
+                        await invoke('repairIssueDerivedData', { issueKey: selectedSummary.issueKey });
+                        await load(true);
+                      } finally {
+                        setSaving(false);
+                      }
+                    })()}
+                    disabled={saving}
+                  >
+                    Repair derived data
+                  </button>
+                </div>
+                <ul className="warning-list">
+                  {data.selectedIssueIntegrity.messages.map((message) => <li key={message}>{message}</li>)}
+                </ul>
+              </div>
+            ) : null}
             <h3>Timeline explanation</h3>
             <ol className="timeline">
               {selectedSegments.map((segment) => (
@@ -457,8 +582,20 @@ export const App = () => {
                   </select>
                 </label>
                 <label>
-                  <span>Start mode</span>
+                  <span>Legacy start mode</span>
                   <select value={ruleSetDraft.startMode} onChange={(e) => setRuleSetDraft((c) => c ? { ...c, startMode: e.target.value as StartMode } : c)}>
+                    {START_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Response start mode</span>
+                  <select value={ruleSetDraft.responseStartMode ?? ruleSetDraft.startMode} onChange={(e) => setRuleSetDraft((c) => c ? { ...c, responseStartMode: e.target.value as StartMode } : c)}>
+                    {START_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Handling start mode</span>
+                  <select value={ruleSetDraft.activeStartMode ?? ruleSetDraft.startMode} onChange={(e) => setRuleSetDraft((c) => c ? { ...c, activeStartMode: e.target.value as StartMode } : c)}>
                     {START_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </label>
@@ -471,6 +608,57 @@ export const App = () => {
                 <label className="checkbox-row">
                   <input type="checkbox" checked={ruleSetDraft.enabled} onChange={(e) => setRuleSetDraft((c) => c ? { ...c, enabled: e.target.checked } : c)} />
                   <span>Enabled</span>
+                </label>
+                <label>
+                  <span>Enabled clocks</span>
+                  <input
+                    value={ruleSetDraft.enabledClocks.join(', ')}
+                    onChange={(e) => setRuleSetDraft((c) => c ? {
+                      ...c,
+                      enabledClocks: e.target.value
+                        .split(',')
+                        .map((value) => value.trim())
+                        .filter((value): value is ClockKind => CLOCK_OPTIONS.some((option) => option.value === value)),
+                    } : c)}
+                  />
+                </label>
+                <label>
+                  <span>Breach basis</span>
+                  <select value={ruleSetDraft.breachBasis} onChange={(e) => setRuleSetDraft((c) => c ? { ...c, breachBasis: e.target.value as BreachBasis } : c)}>
+                    {BREACH_BASIS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Default response target (seconds)</span>
+                  <input
+                    type="number"
+                    value={ruleSetDraft.defaultResponseThresholdSeconds}
+                    onChange={(e) => setRuleSetDraft((c) => c ? { ...c, defaultResponseThresholdSeconds: Number(e.target.value) } : c)}
+                  />
+                </label>
+                <label>
+                  <span>Default active target (seconds)</span>
+                  <input
+                    type="number"
+                    value={ruleSetDraft.defaultActiveThresholdSeconds}
+                    onChange={(e) => setRuleSetDraft((c) => c ? { ...c, defaultActiveThresholdSeconds: Number(e.target.value) } : c)}
+                  />
+                </label>
+                <label>
+                  <span>Default combined target (seconds)</span>
+                  <input
+                    type="number"
+                    value={ruleSetDraft.defaultCombinedThresholdSeconds ?? ''}
+                    onChange={(e) => setRuleSetDraft((c) => c ? { ...c, defaultCombinedThresholdSeconds: e.target.value ? Number(e.target.value) : undefined } : c)}
+                  />
+                </label>
+                <label>
+                  <span>Default resolution target (seconds)</span>
+                  <input
+                    type="number"
+                    value={ruleSetDraft.defaultResolutionThresholdSeconds ?? ''}
+                    onChange={(e) => setRuleSetDraft((c) => c ? { ...c, defaultResolutionThresholdSeconds: e.target.value ? Number(e.target.value) : undefined } : c)}
+                  />
                 </label>
                 <label>
                   <span>Tracked ownership values</span>
@@ -563,6 +751,15 @@ export const App = () => {
                   rows={5}
                   value={stringifyResumeRules(ruleSetDraft.resumeRules)}
                   onChange={(e) => setRuleSetDraft((c) => c ? { ...c, resumeRules: parseResumeRules(e.target.value) } : c)}
+                />
+              </label>
+
+              <label>
+                <span>Priority overrides (one per line, <code>Priority | timing=24x7 | clocks=response,active | breach=active | response=5400 | active=18000 | combined=36000 | resolution=54000</code>)</span>
+                <textarea
+                  rows={6}
+                  value={stringifyPriorityOverrides(ruleSetDraft.priorityOverrides)}
+                  onChange={(e) => setRuleSetDraft((c) => c ? { ...c, priorityOverrides: parsePriorityOverrides(e.target.value) } : c)}
                 />
               </label>
 
@@ -718,6 +915,16 @@ export const App = () => {
             <ul className="metric-list">
               {data.rebuildJobs.slice(0, 6).map((job) => (
                 <li key={job.jobId}><span>{job.issueKey} · {job.source}</span><strong>{job.status}</strong></li>
+              ))}
+            </ul>
+          </article>
+          <article className="card full-span">
+            <h2>Reporting data sources</h2>
+            <ul className="warning-list">
+              {data.reportingDataSources.map((entry) => (
+                <li key={entry.widget}>
+                  <strong>{entry.widget}</strong>: {entry.source}{entry.fallbackUsed ? ' (fallback)' : ''} — {entry.detail}
+                </li>
               ))}
             </ul>
           </article>

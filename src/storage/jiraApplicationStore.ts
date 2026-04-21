@@ -9,13 +9,18 @@ import {
   searchIssues,
   searchIssuesWithNames,
 } from '../api/jira';
+import { buildAggregateCache } from '../domain/reporting/aggregateCache';
+import { validateDerivedData } from '../domain/reporting/integrity';
+import { buildReportingSnapshot } from '../domain/reporting/queryPath';
 import { calculateIssueSla } from '../domain/rules/engine';
 import type {
+  AggregateDaily,
   AdminMetadata,
   BootstrapData,
   BootstrapRequest,
   BusinessCalendar,
   DashboardMetric,
+  DerivedDataIntegrityReport,
   FieldMapping,
   IssueCheckpoint,
   IssueSearchFilters,
@@ -50,6 +55,8 @@ const storeKey = {
   summaryPrefix: 'jira-store::summary::',
   segments: (issueKey: string) => `jira-store::segments::${issueKey}`,
   segmentsPrefix: 'jira-store::segments::',
+  aggregate: (projectKey: string, aggregateId: string) => `jira-store::aggregate::${projectKey}::${aggregateId}`,
+  aggregatePrefix: (projectKey: string) => `jira-store::aggregate::${projectKey}::`,
   checkpoint: (issueKey: string) => `jira-store::checkpoint::${issueKey}`,
   checkpointPrefix: 'jira-store::checkpoint::',
   rebuildJob: (jobId: string) => `jira-store::rebuild-job::${jobId}`,
@@ -147,6 +154,8 @@ const createDefaultRuleSet = (calendarId: string): RuleSet => ({
   trackedOwnershipValues: [],
   ownershipPrecedence: ['ownership', 'team', 'assignee'],
   startMode: 'assignment',
+  responseStartMode: 'assignment',
+  activeStartMode: 'status',
   activeStatuses: ['In Progress', 'Working'],
   pausedStatuses: ['Waiting for customer', 'Need More Info', 'Blocked'],
   stoppedStatuses: ['Done', 'Closed', 'Resolved'],
@@ -156,8 +165,12 @@ const createDefaultRuleSet = (calendarId: string): RuleSet => ({
   priorityOverrides: [],
   enabled: true,
   defaultTimingMode: 'business-hours',
+  enabledClocks: ['response', 'active'],
+  breachBasis: 'active',
   defaultResponseThresholdSeconds: 7200,
   defaultActiveThresholdSeconds: 28800,
+  defaultCombinedThresholdSeconds: 36000,
+  defaultResolutionThresholdSeconds: 54000,
 });
 
 export class JiraApplicationStore implements ApplicationStore {
@@ -262,8 +275,33 @@ export class JiraApplicationStore implements ApplicationStore {
     await kvs.set(storeKey.checkpoint(checkpoint.issueKey), checkpoint);
   }
 
+  private async saveAggregate(aggregate: AggregateDaily): Promise<void> {
+    await kvs.set(
+      storeKey.aggregate(aggregate.projectKey, aggregate.aggregateId),
+      aggregate,
+    );
+  }
+
   private async saveRebuildJob(job: RebuildJob): Promise<void> {
     await kvs.set(storeKey.rebuildJob(job.jobId), job);
+  }
+
+  private async listAggregatesForProject(projectKey: string): Promise<AggregateDaily[]> {
+    return queryByPrefix<AggregateDaily>(storeKey.aggregatePrefix(projectKey));
+  }
+
+  private async rebuildAggregatesForProject(projectKey: string): Promise<void> {
+    const existing = await queryByPrefix<AggregateDaily>(storeKey.aggregatePrefix(projectKey));
+    await Promise.all(
+      existing.map((aggregate) =>
+        kvs.delete(storeKey.aggregate(projectKey, aggregate.aggregateId)),
+      ),
+    );
+
+    const summaries = (await queryByPrefix<IssueSummary>(storeKey.summaryPrefix))
+      .filter((summary) => summary.projectKey === projectKey);
+    const aggregates = buildAggregateCache(summaries);
+    await Promise.all(aggregates.map((aggregate) => this.saveAggregate(aggregate)));
   }
 
   private async resolveTeamFieldKey(projectKeys: string[]): Promise<string | undefined> {
@@ -347,36 +385,73 @@ export class JiraApplicationStore implements ApplicationStore {
       fieldMapping: effectiveFieldMapping,
     });
     const computation = calculateIssueSla({ snapshot, ruleSet, calendar });
-    const checkpoint: IssueCheckpoint = {
+    const pendingCheckpoint: IssueCheckpoint = {
       issueKey: snapshot.issueKey,
       ruleSetId: ruleSet.ruleSetId,
+      computeRunId: computation.checkpoint.computeRunId,
       lastProcessedChangelogId: changelog.at(-1)?.id ?? '',
       lastIssueUpdatedTimestamp: snapshot.updatedAt,
       lastRecomputedAt: computation.summary.recomputedAt,
       summaryVersion: computation.checkpoint.summaryVersion,
-      needsRebuild: false,
+      needsRebuild: true,
+      derivedDataStatus: 'repairable',
+      integrityIssues: ['Derived write in progress.'],
     };
 
-    await Promise.all([
-      this.saveSnapshot(snapshot),
-      this.saveSegments(issueKey, computation.segments),
-      this.saveSummary(computation.summary),
-      this.saveCheckpoint(checkpoint),
-    ]);
+    await this.saveCheckpoint(pendingCheckpoint);
 
-    if (recordJob) {
-      await this.saveRebuildJob({
-        jobId: `${source}-${issueKey}-${Date.now()}`,
+    try {
+      await this.saveSnapshot(snapshot);
+      await this.saveSegments(issueKey, computation.segments);
+      await this.saveSummary(computation.summary);
+      await this.rebuildAggregatesForProject(snapshot.projectKey);
+
+      const integrity = validateDerivedData({
         issueKey,
-        source,
-        status: 'completed',
-        createdAt: computation.summary.recomputedAt,
-        completedAt: computation.summary.recomputedAt,
-        message: `Synced ${issueKey} from Jira.`,
+        summary: computation.summary,
+        segments: computation.segments,
+        checkpoint: computation.checkpoint,
+        currentRuleSet: ruleSet,
       });
-    }
+      const finalSummary: IssueSummary = {
+        ...computation.summary,
+        derivedDataStatus: integrity.status,
+      };
+      const checkpoint: IssueCheckpoint = {
+        ...computation.checkpoint,
+        derivedDataStatus: integrity.status,
+        integrityIssues: integrity.valid ? [] : integrity.messages,
+        lastIntegrityCheckAt: computation.summary.recomputedAt,
+      };
 
-    return clone(computation.summary);
+      await Promise.all([
+        this.saveSummary(finalSummary),
+        this.saveCheckpoint(checkpoint),
+      ]);
+
+      if (recordJob) {
+        await this.saveRebuildJob({
+          jobId: `${source}-${issueKey}-${Date.now()}`,
+          issueKey,
+          source,
+          status: 'completed',
+          createdAt: computation.summary.recomputedAt,
+          completedAt: computation.summary.recomputedAt,
+          message: `Synced ${issueKey} from Jira.`,
+        });
+      }
+
+      return clone(finalSummary);
+    } catch (error) {
+      await this.saveCheckpoint({
+        ...pendingCheckpoint,
+        derivedDataStatus: 'repairable',
+        integrityIssues: [
+          error instanceof Error ? error.message : 'Derived data write failed.',
+        ],
+      });
+      throw error;
+    }
   }
 
   private async primeSummariesIfNeeded(): Promise<void> {
@@ -467,57 +542,43 @@ export class JiraApplicationStore implements ApplicationStore {
     this.primed = true;
   }
 
-  private buildOverview(summaries: IssueSummary[]): OverviewMetrics {
+  async getIssueIntegrityReport(issueKey: string): Promise<DerivedDataIntegrityReport | undefined> {
+    const [summary, segments, checkpoint] = await Promise.all([
+      kvs.get<IssueSummary>(storeKey.summary(issueKey)),
+      kvs.get<IssueSegment[]>(storeKey.segments(issueKey)),
+      kvs.get<IssueCheckpoint>(storeKey.checkpoint(issueKey)),
+    ]);
+
+    const projectKey = summary?.projectKey ?? issueKey.split('-')[0];
+    const currentRuleSet = projectKey ? await this.getRuleSetForProject(projectKey) : undefined;
+
+    return validateDerivedData({
+      issueKey,
+      summary: summary ?? undefined,
+      segments: segments ?? undefined,
+      checkpoint: checkpoint ?? undefined,
+      currentRuleSet,
+    });
+  }
+
+  async repairIssueDerivedData(issueKey: string): Promise<DerivedDataIntegrityReport> {
+    const before = await this.getIssueIntegrityReport(issueKey);
+    const repairedSummary = await this.syncIssue(issueKey, 'manual', true);
+    const after = await this.getIssueIntegrityReport(issueKey);
+
     return {
-      issueCount: summaries.length,
-      breachCount: summaries.filter((summary) => summary.breachState === 'breached').length,
-      averageResponseSeconds: average(summaries.map((summary) => summary.responseSeconds)),
-      averageActiveSeconds: average(summaries.map((summary) => summary.activeSeconds)),
-      totalPausedSeconds: summaries.reduce((total, summary) => total + summary.pausedSeconds, 0),
+      issueKey,
+      computeRunId: repairedSummary.computeRunId,
+      valid: Boolean(after?.valid),
+      status: after?.status ?? 'repairable',
+      repaired: true,
+      messages: before?.valid
+        ? ['Derived data was already consistent; the repair action refreshed the aggregate cache and linked records.']
+        : [
+            ...(before?.messages ?? ['Derived data required repair.']),
+            'Derived summary, segments, checkpoint, and aggregate cache were rebuilt together.',
+          ],
     };
-  }
-
-  private buildAssigneeMetrics(summaries: IssueSummary[]): DashboardMetric[] {
-    const totals = new Map<string, { total: number; count: number }>();
-    for (const summary of summaries) {
-      for (const metric of summary.assigneeMetrics) {
-        const current = totals.get(metric.assigneeAccountId) ?? { total: 0, count: 0 };
-        current.total += metric.activeSeconds;
-        current.count += 1;
-        totals.set(metric.assigneeAccountId, current);
-      }
-    }
-    return [...totals.entries()]
-      .map(([label, value]) => ({
-        label,
-        valueSeconds: average([value.total / Math.max(value.count, 1)]),
-        count: value.count,
-      }))
-      .sort((left, right) => right.valueSeconds - left.valueSeconds);
-  }
-
-  private buildTeamMetrics(segments: IssueSegment[]): DashboardMetric[] {
-    const totals = new Map<string, { total: number; count: number }>();
-    for (const segment of segments.filter((entry) => entry.countsTowardActive)) {
-      const label = segment.teamLabel ?? 'unmapped';
-      const current = totals.get(label) ?? { total: 0, count: 0 };
-      current.total += segment.businessSeconds;
-      current.count += 1;
-      totals.set(label, current);
-    }
-    return [...totals.entries()].map(([label, value]) => ({
-      label,
-      valueSeconds: average([value.total / Math.max(value.count, 1)]),
-      count: value.count,
-    }));
-  }
-
-  private buildBreachMetrics(summaries: IssueSummary[]): Array<{ priority: string; count: number }> {
-    const counts = new Map<string, number>();
-    for (const summary of summaries.filter((item) => item.breachState === 'breached')) {
-      counts.set(summary.currentPriority, (counts.get(summary.currentPriority) ?? 0) + 1);
-    }
-    return [...counts.entries()].map(([priority, count]) => ({ priority, count }));
   }
 
   private async buildAdminMetadata(projectKeys: string[] = []): Promise<AdminMetadata> {
@@ -874,13 +935,12 @@ export class JiraApplicationStore implements ApplicationStore {
       await this.primeSummariesIfNeeded();
     }
 
-    const [ruleSets, fieldMappings, calendars, summaries, jobs, allSegments] = await Promise.all([
+    const [ruleSets, fieldMappings, calendars, summaries, jobs] = await Promise.all([
       this.listRuleSets(),
       this.listFieldMappings(),
       this.listCalendars(),
       this.listIssueSummaries(),
       this.listRebuildJobs(),
-      queryByPrefix<IssueSegment[]>(storeKey.segmentsPrefix),
     ]);
 
     const selectedSummary = issueKey
@@ -895,6 +955,15 @@ export class JiraApplicationStore implements ApplicationStore {
 
     const selectedRuleSet = ruleSets[0];
     const adminMetadata = await this.buildAdminMetadata(selectedRuleSet?.projectKeys ?? []);
+    const reporting = buildReportingSnapshot({
+      summaries,
+      aggregates: selectedRuleSet?.projectKeys[0]
+        ? await this.listAggregatesForProject(selectedRuleSet.projectKeys[0])
+        : [],
+    });
+    const selectedIssueIntegrity = selectedSummary
+      ? await this.getIssueIntegrityReport(selectedSummary.issueKey)
+      : undefined;
 
     return {
       surface,
@@ -905,17 +974,19 @@ export class JiraApplicationStore implements ApplicationStore {
       fieldMappings,
       calendars,
       rebuildJobs: jobs,
-      overview: this.buildOverview(summaries),
-      assigneeMetrics: this.buildAssigneeMetrics(summaries),
-      teamMetrics: this.buildTeamMetrics(allSegments.flat()),
-      breachMetrics: this.buildBreachMetrics(summaries),
+      overview: reporting.overview,
+      assigneeMetrics: reporting.assigneeMetrics,
+      teamMetrics: reporting.teamMetrics,
+      breachMetrics: reporting.breachMetrics,
+      reportingDataSources: reporting.reportingDataSources,
       adminMetadata,
+      selectedIssueIntegrity,
     };
   }
 
   async exportCsv(filters: IssueSearchFilters = {}): Promise<string> {
     const summaries = await this.listIssueSummaries(filters);
-    const header = 'Issue Key,Summary,Priority,Current State,Response Seconds,Active Seconds,Paused Seconds,Breach State';
+    const header = 'Issue Key,Summary,Priority,Current State,Response Seconds,Active Seconds,Paused Seconds,Waiting Seconds,Combined Seconds,Resolution Seconds,Breach State,Breach Basis,Breached Clock,Compute Run ID';
     const rows = summaries.map((summary) => [
       summary.issueKey,
       JSON.stringify(summary.summary),
@@ -924,7 +995,13 @@ export class JiraApplicationStore implements ApplicationStore {
       summary.responseSeconds,
       summary.activeSeconds,
       summary.pausedSeconds,
+      summary.waitingSeconds,
+      summary.combinedSeconds,
+      summary.resolutionSeconds,
       summary.breachState,
+      summary.effectivePolicy.breachBasis,
+      summary.breachedClock ?? '',
+      summary.computeRunId,
     ].join(','));
     return [header, ...rows].join('\n');
   }
