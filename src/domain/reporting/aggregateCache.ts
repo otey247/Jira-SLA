@@ -19,7 +19,21 @@ const buildAggregateKey = (
   summary.currentPriority,
 ].join('::');
 
-export const buildAggregateCache = (summaries: IssueSummary[]): AggregateDaily[] => {
+export const buildAggregateCache = (
+  summaries: IssueSummary[],
+  options: {
+    computeRunId?: string;
+    generatedAt?: string;
+  } = {},
+): AggregateDaily[] => {
+  const rebuildComputeRunId = options.computeRunId
+    ?? summaries[0]?.computeRunId
+    ?? 'aggregate-rebuild';
+  const rebuildGeneratedAt = options.generatedAt
+    ?? summaries.reduce(
+      (latest, summary) => (summary.recomputedAt > latest ? summary.recomputedAt : latest),
+      summaries[0]?.recomputedAt ?? new Date(0).toISOString(),
+    );
   const aggregates = new Map<string, AggregateDaily & AggregateAccumulator>();
 
   for (const summary of summaries) {
@@ -30,8 +44,8 @@ export const buildAggregateCache = (summaries: IssueSummary[]): AggregateDaily[]
       date,
       projectKey: summary.projectKey,
       ruleSetId: summary.ruleSetId,
-      computeRunId: summary.computeRunId,
-      generatedAt: summary.recomputedAt,
+      computeRunId: rebuildComputeRunId,
+      generatedAt: rebuildGeneratedAt,
       assigneeAccountId: summary.currentAssignee,
       teamLabel: summary.currentTeam,
       priority: summary.currentPriority,
@@ -43,10 +57,6 @@ export const buildAggregateCache = (summaries: IssueSummary[]): AggregateDaily[]
       activeSeconds: 0,
     };
 
-    if (summary.recomputedAt > existing.generatedAt) {
-      existing.computeRunId = summary.computeRunId;
-      existing.generatedAt = summary.recomputedAt;
-    }
     existing.ticketCount += 1;
     existing.responseSeconds += summary.responseSeconds;
     existing.activeSeconds += summary.activeSeconds;

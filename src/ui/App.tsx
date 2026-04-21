@@ -197,16 +197,20 @@ const parsePriorityOverrides = (value: string): PriorityOverride[] => (
           parsed.breachBasis = valuePart as BreachBasis;
         }
         if (key === 'response') {
-          parsed.responseThresholdSeconds = valuePart ? Number(valuePart) : undefined;
+          const numericValue = valuePart ? Number(valuePart) : undefined;
+          parsed.responseThresholdSeconds = Number.isFinite(numericValue) ? numericValue : undefined;
         }
         if (key === 'active') {
-          parsed.activeThresholdSeconds = valuePart ? Number(valuePart) : undefined;
+          const numericValue = valuePart ? Number(valuePart) : undefined;
+          parsed.activeThresholdSeconds = Number.isFinite(numericValue) ? numericValue : undefined;
         }
         if (key === 'combined') {
-          parsed.combinedThresholdSeconds = valuePart ? Number(valuePart) : undefined;
+          const numericValue = valuePart ? Number(valuePart) : undefined;
+          parsed.combinedThresholdSeconds = Number.isFinite(numericValue) ? numericValue : undefined;
         }
         if (key === 'resolution') {
-          parsed.resolutionThresholdSeconds = valuePart ? Number(valuePart) : undefined;
+          const numericValue = valuePart ? Number(valuePart) : undefined;
+          parsed.resolutionThresholdSeconds = Number.isFinite(numericValue) ? numericValue : undefined;
         }
       }
       return parsed;
@@ -582,7 +586,7 @@ export const App = () => {
                   </select>
                 </label>
                 <label>
-                  <span>Default start mode fallback</span>
+                  <span>Default start mode (fallback)</span>
                   <select value={ruleSetDraft.startMode} onChange={(e) => setRuleSetDraft((c) => c ? { ...c, startMode: e.target.value as StartMode } : c)}>
                     {START_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>

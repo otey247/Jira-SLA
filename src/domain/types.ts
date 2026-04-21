@@ -193,7 +193,7 @@ export interface IssueSummary {
 export interface IssueCheckpoint {
   issueKey: string;
   ruleSetId: string;
-   computeRunId: string;
+  computeRunId: string;
   lastProcessedChangelogId: string;
   lastIssueUpdatedTimestamp: string;
   lastRecomputedAt: string;

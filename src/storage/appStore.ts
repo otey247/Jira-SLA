@@ -33,6 +33,9 @@ import {
 const average = (values: number[]): number => (values.length > 0 ? Math.round(values.reduce((total, value) => total + value, 0) / values.length) : 0);
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const escapeCsvValue = (value: string | number): string => (
+  `"${String(value).replace(/"/g, '""')}"`
+);
 
 export class MemoryApplicationStore implements ApplicationStore {
   private readonly snapshots = new Map<string, IssueSnapshot>();
@@ -110,7 +113,10 @@ export class MemoryApplicationStore implements ApplicationStore {
     this.checkpoints.set(issueKey, pendingCheckpoint);
     this.summaries.set(issueKey, clone(computation.summary));
     this.segments.set(issueKey, clone(computation.segments));
-    this.rebuildAggregatesForProject(snapshot.projectKey);
+    this.rebuildAggregatesForProject(snapshot.projectKey, {
+      computeRunId: computation.summary.computeRunId,
+      generatedAt: computation.summary.recomputedAt,
+    });
     const integrity = validateDerivedData({
       issueKey,
       summary: computation.summary,
@@ -143,7 +149,13 @@ export class MemoryApplicationStore implements ApplicationStore {
     return clone(finalSummary);
   }
 
-  private rebuildAggregatesForProject(projectKey: string): void {
+  private rebuildAggregatesForProject(
+    projectKey: string,
+    rebuildContext?: {
+      computeRunId?: string;
+      generatedAt?: string;
+    },
+  ): void {
     for (const key of [...this.aggregates.keys()]) {
       if (key.startsWith(`${projectKey}::`)) {
         this.aggregates.delete(key);
@@ -153,7 +165,7 @@ export class MemoryApplicationStore implements ApplicationStore {
     const projectSummaries = [...this.summaries.values()].filter(
       (summary) => summary.projectKey === projectKey,
     );
-    for (const aggregate of buildAggregateCache(projectSummaries)) {
+    for (const aggregate of buildAggregateCache(projectSummaries, rebuildContext)) {
       this.aggregates.set(`${projectKey}::${aggregate.aggregateId}`, clone(aggregate));
     }
   }
@@ -433,7 +445,7 @@ export class MemoryApplicationStore implements ApplicationStore {
     const header = 'Issue Key,Summary,Priority,Current State,Response Seconds,Active Seconds,Paused Seconds,Waiting Seconds,Combined Seconds,Resolution Seconds,Breach State,Breach Basis,Breached Clock,Compute Run ID';
     const rows = summaries.map((summary) => [
       summary.issueKey,
-      JSON.stringify(summary.summary),
+      summary.summary,
       summary.currentPriority,
       summary.currentState,
       summary.responseSeconds,
@@ -446,7 +458,7 @@ export class MemoryApplicationStore implements ApplicationStore {
       summary.effectivePolicy.breachBasis,
       summary.breachedClock ?? '',
       summary.computeRunId,
-    ].join(','));
+    ].map(escapeCsvValue).join(','));
     return [header, ...rows].join('\n');
   }
 }

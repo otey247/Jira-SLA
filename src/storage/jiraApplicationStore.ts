@@ -53,6 +53,7 @@ const storeKey = {
   snapshot: (issueKey: string) => `jira-store::snapshot::${issueKey}`,
   summary: (issueKey: string) => `jira-store::summary::${issueKey}`,
   summaryPrefix: 'jira-store::summary::',
+  projectSummaryIndex: (projectKey: string) => `jira-store::summary-index::${projectKey}`,
   segments: (issueKey: string) => `jira-store::segments::${issueKey}`,
   segmentsPrefix: 'jira-store::segments::',
   aggregate: (projectKey: string, aggregateId: string) => `jira-store::aggregate::${projectKey}::${aggregateId}`,
@@ -269,6 +270,13 @@ export class JiraApplicationStore implements ApplicationStore {
 
   private async saveSummary(summary: IssueSummary): Promise<void> {
     await kvs.set(storeKey.summary(summary.issueKey), summary);
+    const projectIndex = (await kvs.get<string[]>(storeKey.projectSummaryIndex(summary.projectKey))) ?? [];
+    if (!projectIndex.includes(summary.issueKey)) {
+      await kvs.set(
+        storeKey.projectSummaryIndex(summary.projectKey),
+        [...projectIndex, summary.issueKey],
+      );
+    }
   }
 
   private async saveCheckpoint(checkpoint: IssueCheckpoint): Promise<void> {
@@ -286,11 +294,25 @@ export class JiraApplicationStore implements ApplicationStore {
     await kvs.set(storeKey.rebuildJob(job.jobId), job);
   }
 
+  private async listIssueSummariesForProject(projectKey: string): Promise<IssueSummary[]> {
+    const issueKeys = (await kvs.get<string[]>(storeKey.projectSummaryIndex(projectKey))) ?? [];
+    const summaries = await Promise.all(
+      issueKeys.map((issueKey) => kvs.get<IssueSummary>(storeKey.summary(issueKey))),
+    );
+    return summaries.filter((summary): summary is IssueSummary => Boolean(summary));
+  }
+
   private async listAggregatesForProject(projectKey: string): Promise<AggregateDaily[]> {
     return queryByPrefix<AggregateDaily>(storeKey.aggregatePrefix(projectKey));
   }
 
-  private async rebuildAggregatesForProject(projectKey: string): Promise<void> {
+  private async rebuildAggregatesForProject(
+    projectKey: string,
+    rebuildContext?: {
+      computeRunId?: string;
+      generatedAt?: string;
+    },
+  ): Promise<void> {
     const existing = await queryByPrefix<AggregateDaily>(storeKey.aggregatePrefix(projectKey));
     await Promise.all(
       existing.map((aggregate) =>
@@ -298,9 +320,8 @@ export class JiraApplicationStore implements ApplicationStore {
       ),
     );
 
-    const summaries = (await queryByPrefix<IssueSummary>(storeKey.summaryPrefix))
-      .filter((summary) => summary.projectKey === projectKey);
-    const aggregates = buildAggregateCache(summaries);
+    const summaries = await this.listIssueSummariesForProject(projectKey);
+    const aggregates = buildAggregateCache(summaries, rebuildContext);
     await Promise.all(aggregates.map((aggregate) => this.saveAggregate(aggregate)));
   }
 
@@ -400,7 +421,10 @@ export class JiraApplicationStore implements ApplicationStore {
       await this.saveSnapshot(snapshot);
       await this.saveSegments(issueKey, computation.segments);
       await this.saveSummary(computation.summary);
-      await this.rebuildAggregatesForProject(snapshot.projectKey);
+      await this.rebuildAggregatesForProject(snapshot.projectKey, {
+        computeRunId: computation.summary.computeRunId,
+        generatedAt: computation.summary.recomputedAt,
+      });
 
       const integrity = validateDerivedData({
         issueKey,
@@ -993,7 +1017,7 @@ export class JiraApplicationStore implements ApplicationStore {
     const header = 'Issue Key,Summary,Priority,Current State,Response Seconds,Active Seconds,Paused Seconds,Waiting Seconds,Combined Seconds,Resolution Seconds,Breach State,Breach Basis,Breached Clock,Compute Run ID';
     const rows = summaries.map((summary) => [
       summary.issueKey,
-      JSON.stringify(summary.summary),
+      summary.summary,
       summary.currentPriority,
       summary.currentState,
       summary.responseSeconds,
@@ -1006,7 +1030,10 @@ export class JiraApplicationStore implements ApplicationStore {
       summary.effectivePolicy.breachBasis,
       summary.breachedClock ?? '',
       summary.computeRunId,
-    ].join(','));
+    ].map(escapeCsvValue).join(','));
     return [header, ...rows].join('\n');
   }
 }
+const escapeCsvValue = (value: string | number): string => (
+  `"${String(value).replace(/"/g, '""')}"`
+);

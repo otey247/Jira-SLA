@@ -100,7 +100,7 @@ const classifyInterval = (
     };
   }
 
-  if (activeEnabled && activeStartedAt) {
+  if (activeEnabled && activeStartedAt && isActiveStatus(state, ruleSet)) {
     return {
       baseType: 'active',
       reason: `Active handling time is accruing because status ${state.status} is configured as active and ownership is tracked.`,
