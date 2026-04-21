@@ -15,6 +15,21 @@ issue, dashboard, admin, automation, and Rovo-ready surfaces.
 - admin diagnostics that validate mapped Jira fields before recompute
 - customer-facing read-only approval and business-logic documents
 
+## What changed in Milestones 3 and 4
+
+- compute runs now link summaries, segments, checkpoints, and aggregate cache rows
+  with a shared run ID so incomplete writes can be detected and repaired
+- project and dashboard reporting now rebuild and read aggregate cache rows during
+  recompute, with explicit fallback to direct issue summaries when cache rows are
+  unavailable
+- the UI now shows which reporting widgets are reading aggregate cache vs summary
+  fallback, plus per-issue derived-data integrity diagnostics and repair actions
+- rule sets now support separate response and handling clock start modes, enabled
+  clocks, breach basis selection, and richer priority-level clock overrides
+- seeded fixtures and tests now cover ownership transfer, consultant handoff,
+  Need More Info pause/resume, weekend handling, P1 24x7 behavior, and alternate
+  breach-basis policies
+
 ## Installation
 
 See the installation and approval guides:
@@ -44,7 +59,8 @@ The app is positioned as read-only extraction/reporting for Jira issue history.
 - **Jira project page** – KPI cards, issue explorer, assignee analytics, rule
   set administration, field mappings, calendars, and rebuild activity
 - **Jira issue panel** – per-ticket SLA state, response/active/paused/waiting
-  metrics, breach status, and segment timeline explanation
+  metrics, breach status, effective clock policy, derived-data integrity, and
+  segment timeline explanation
 - **Jira dashboard gadget** – rollup metrics by priority and assignee
 - **Scheduled trigger + automation action** – recompute summaries from Jira
   changelog updates
@@ -69,6 +85,8 @@ Forge storage bindings when wiring the app into a deployed Forge environment.
 - Deployed Forge environments default to a Jira-backed store that fetches live
   issues, assignable users, project statuses, and Jira field metadata
 - Field mappings can now be managed from the admin UI and attached to rule sets
+- Rule sets can now configure response start mode, handling start mode, enabled
+  clocks, breach basis, and per-priority override policies
 - `TEAM_FIELD_KEY` remains available as a fallback for tenants that want to
   force a specific team field key
 - Set `USE_SEED_DATA=true` when you explicitly want the seeded in-memory store

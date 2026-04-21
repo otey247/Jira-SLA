@@ -3,6 +3,7 @@ import type {
   BootstrapData,
   BootstrapRequest,
   BusinessCalendar,
+  DerivedDataIntegrityReport,
   FieldMapping,
   IssueCheckpoint,
   IssueSearchFilters,
@@ -30,6 +31,8 @@ export interface ApplicationStore {
   recomputeIssue(issueKey: string, source: RebuildJob['source']): Promise<IssueSummary>;
   recomputePendingIssues(limit?: number): Promise<IssueSummary[]>;
   getCheckpoint(issueKey: string): Promise<IssueCheckpoint | undefined>;
+  getIssueIntegrityReport(issueKey: string): Promise<DerivedDataIntegrityReport | undefined>;
+  repairIssueDerivedData(issueKey: string): Promise<DerivedDataIntegrityReport>;
   getBootstrapData(request: BootstrapRequest): Promise<BootstrapData>;
   getAdminMetadata(projectKeys?: string[]): Promise<AdminMetadata>;
   exportCsv(filters?: IssueSearchFilters): Promise<string>;

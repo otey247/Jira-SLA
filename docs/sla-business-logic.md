@@ -47,6 +47,10 @@ Controls how mapped fields are interpreted:
 - tracked ownership values
 - ownership precedence
 - start mode
+- response start mode
+- handling start mode
+- enabled clocks
+- breach basis
 - active statuses
 - paused statuses
 - stopped statuses
@@ -88,6 +92,45 @@ Example:
 
 In that case, the clock remains paused through intermediate statuses such as
 `Assigned` and resumes only when the issue reaches `In Progress`.
+
+## Separate clocks and breach basis
+
+The engine now treats response and active handling as separate configurable
+clocks.
+
+- **response start mode** controls when first-response timing begins
+- **handling start mode** controls when active-handling timing begins
+- **enabled clocks** determine whether a priority tracks response, active
+  handling, or both
+- **breach basis** determines which clock (or combined / resolution elapsed time)
+  is used when deciding the SLA state
+
+Example hybrid policy:
+
+- response starts on ownership transfer
+- handling starts on active status
+- breach basis = active
+
+That means queue time before Capgemini ownership is excluded, the response clock
+can begin as soon as ownership transfers, and active handling does not start
+until the issue reaches an active status such as `In Progress`.
+
+## Derived-data integrity and reporting cache
+
+Each recompute writes a coordinated compute run across:
+
+- issue summary
+- issue segments
+- checkpoint
+- aggregate cache rows
+
+If a write is interrupted, the checkpoint and summary are marked as
+`repairable`, the UI explains why, and an admin can trigger repair from the
+project or issue surfaces.
+
+Project and dashboard rollups prefer aggregate cache rows. If cache rows are not
+available yet, the UI falls back to direct issue summaries and explicitly shows
+that fallback so reporting behavior remains deterministic and auditable.
 
 ## Read-only behavior
 
