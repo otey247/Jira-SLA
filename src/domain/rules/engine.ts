@@ -87,11 +87,7 @@ const shouldStartSla = (state: WorkingState, ruleSet: RuleSet): boolean => {
   }
 };
 
-const describeWaitingReason = (state: WorkingState, ruleSet: RuleSet): string => {
-  const ownershipValue = resolveTrackedOwnershipSource(state, ruleSet);
-  if (ownershipValue) {
-    return `Timing is waiting because ownership "${ownershipValue}" is not currently in a counted working status.`;
-  }
+const describeWaitingReason = (_state: WorkingState, _ruleSet: RuleSet): string => {
   return 'Timing is waiting because the issue left tracked ownership.';
 };
 

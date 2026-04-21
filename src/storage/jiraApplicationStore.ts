@@ -106,9 +106,9 @@ const createDefaultFieldMapping = (): FieldMapping => ({
   statusFieldKey: 'status',
   priorityFieldKey: 'priority',
   resolutionFieldKey: 'resolutiondate',
-  teamFieldKey: 'Team',
-  ownershipFieldKey: 'Responsible Organization',
-  responsibleOrganizationFieldKey: 'Responsible Organization',
+  teamFieldKey: undefined,
+  ownershipFieldKey: undefined,
+  responsibleOrganizationFieldKey: undefined,
 });
 
 const createDefaultRuleSet = (calendarId: string): RuleSet => ({
@@ -311,19 +311,24 @@ export class JiraApplicationStore implements ApplicationStore {
     const ruleSet = await this.getRuleSetForProject(issue.fields.project.key);
     const calendar = await this.getCalendarForRuleSet(ruleSet);
     const fieldMapping = await this.getFieldMappingForRuleSet(ruleSet);
+    const effectiveFieldMapping = fieldMapping?.teamFieldKey
+      ? fieldMapping
+      : (
+          fallbackTeamFieldKey
+            ? {
+                ...(fieldMapping ?? {
+                  fieldMappingId: 'detected-team-field',
+                  name: 'Detected Jira team field',
+                }),
+                teamFieldKey: fallbackTeamFieldKey,
+              }
+            : fieldMapping
+        );
     const changelog = await fetchChangelog(issueKey);
     const snapshot = normalizeLiveJiraIssue({
       issue,
       changelog,
-      fieldMapping: fieldMapping ?? (
-        fallbackTeamFieldKey
-          ? {
-              fieldMappingId: 'detected-team-field',
-              name: 'Detected Jira team field',
-              teamFieldKey: fallbackTeamFieldKey,
-            }
-          : undefined
-      ),
+      fieldMapping: effectiveFieldMapping,
     });
     const computation = calculateIssueSla({ snapshot, ruleSet, calendar });
     const checkpoint: IssueCheckpoint = {
@@ -524,7 +529,6 @@ export class JiraApplicationStore implements ApplicationStore {
         if (field.key) {
           availableFieldIds.add(field.key);
         }
-        availableFieldIds.add(field.name);
       }
     } catch (cause) {
       warnings.push(cause instanceof Error ? cause.message : 'Unable to load Jira fields.');
