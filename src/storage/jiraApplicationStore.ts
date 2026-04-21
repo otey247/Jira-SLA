@@ -113,7 +113,7 @@ const createDefaultFieldMapping = (): FieldMapping => ({
 
 const createDetectedTeamFieldMapping = (teamFieldKey: string): FieldMapping => ({
   ...createDefaultFieldMapping(),
-  fieldMappingId: 'detected-team-field',
+  fieldMappingId: 'field-mapping-detected-team',
   name: 'Detected Jira team field',
   teamFieldKey,
 });
@@ -122,7 +122,11 @@ const resolveEffectiveFieldMapping = (
   fieldMapping: FieldMapping | undefined,
   fallbackTeamFieldKey: string | undefined,
 ): FieldMapping | undefined => {
-  if (fieldMapping?.teamFieldKey || !fallbackTeamFieldKey) {
+  if (fieldMapping?.teamFieldKey) {
+    return fieldMapping;
+  }
+
+  if (!fallbackTeamFieldKey) {
     return fieldMapping;
   }
 
