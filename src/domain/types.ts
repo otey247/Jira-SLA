@@ -1,8 +1,25 @@
 export type TimingMode = 'business-hours' | '24x7';
-export type StartMode = 'assignment' | 'status' | 'assignment-or-status';
-export type SegmentType = 'untracked' | 'response' | 'active' | 'paused' | 'outside-hours' | 'stopped';
+export type StartMode =
+  | 'assignment'
+  | 'status'
+  | 'assignment-or-status'
+  | 'ownership-field';
+export type SegmentType =
+  | 'untracked'
+  | 'response'
+  | 'active'
+  | 'paused'
+  | 'waiting'
+  | 'outside-hours'
+  | 'stopped';
 export type BreachState = 'healthy' | 'warning' | 'breached';
 export type SurfaceKind = 'projectPage' | 'issuePanel' | 'dashboardGadget';
+export type OwnershipSource = 'ownership' | 'team' | 'assignee';
+
+export interface ResumeRule {
+  fromStatus?: string;
+  toStatus: string;
+}
 
 export interface PriorityOverride {
   priority: string;
@@ -11,18 +28,34 @@ export interface PriorityOverride {
   activeThresholdSeconds?: number;
 }
 
+export interface FieldMapping {
+  fieldMappingId: string;
+  name: string;
+  assigneeFieldKey?: string;
+  statusFieldKey?: string;
+  priorityFieldKey?: string;
+  resolutionFieldKey?: string;
+  teamFieldKey?: string;
+  ownershipFieldKey?: string;
+  responsibleOrganizationFieldKey?: string;
+}
+
 export interface RuleSet {
   ruleSetId: string;
   name: string;
   version: number;
   projectKeys: string[];
+  fieldMappingId?: string;
   trackedAssignees: string[];
   trackedTeams: string[];
+  trackedOwnershipValues: string[];
+  ownershipPrecedence: OwnershipSource[];
   startMode: StartMode;
   activeStatuses: string[];
   pausedStatuses: string[];
   stoppedStatuses: string[];
   resumeStatuses: string[];
+  resumeRules: ResumeRule[];
   businessCalendarId: string;
   priorityOverrides: PriorityOverride[];
   enabled: boolean;
@@ -47,18 +80,27 @@ export interface BusinessCalendar {
 export interface WorkingState {
   assigneeAccountId?: string;
   teamLabel?: string;
+  ownershipLabel?: string;
   status: string;
   priority: string;
   resolved: boolean;
 }
 
-export type IssueEventField = 'assignee' | 'team' | 'status' | 'priority' | 'resolution';
+export type IssueEventField =
+  | 'assignee'
+  | 'team'
+  | 'ownership'
+  | 'status'
+  | 'priority'
+  | 'resolution';
 
 export interface IssueEvent {
   kind: 'change';
   field: IssueEventField;
   timestamp: string;
   changelogId: string;
+  sourceFieldId?: string;
+  sourceFieldName?: string;
   from?: string;
   to?: string;
 }
@@ -80,6 +122,7 @@ export interface IssueSegment {
   ruleVersion: number;
   assigneeAccountId?: string;
   teamLabel?: string;
+  ownershipLabel?: string;
   status: string;
   priority: string;
   segmentType: SegmentType;
@@ -111,9 +154,12 @@ export interface IssueSummary {
   responseSeconds: number;
   activeSeconds: number;
   pausedSeconds: number;
+  waitingSeconds: number;
   outsideHoursSeconds: number;
   breachState: BreachState;
   currentAssignee?: string;
+  currentTeam?: string;
+  currentOwnership?: string;
   currentPriority: string;
   recomputedAt: string;
   slaStartedAt?: string;
@@ -187,9 +233,15 @@ export interface AdminMetadata {
   assignees: SelectorOption[];
   teams: SelectorOption[];
   statuses: string[];
+  jiraFields: SelectorOption[];
   warnings: string[];
   teamFieldConfigured: boolean;
   teamFieldKey?: string;
+  fieldMappingDiagnostics: Array<{
+    fieldMappingId: string;
+    valid: boolean;
+    messages: string[];
+  }>;
 }
 
 export interface BootstrapRequest {
@@ -207,6 +259,7 @@ export interface BootstrapData {
     segments: IssueSegment[];
   };
   ruleSets: RuleSet[];
+  fieldMappings: FieldMapping[];
   calendars: BusinessCalendar[];
   rebuildJobs: RebuildJob[];
   overview: OverviewMetrics;

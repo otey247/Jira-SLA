@@ -2,6 +2,7 @@ import { kvs, WhereConditions } from '@forge/kvs';
 import {
   fetchAssignableUsers,
   fetchChangelog,
+  fetchJiraFields,
   fetchIssueWithFields,
   fetchProjects,
   fetchProjectStatuses,
@@ -15,6 +16,7 @@ import type {
   BootstrapRequest,
   BusinessCalendar,
   DashboardMetric,
+  FieldMapping,
   IssueCheckpoint,
   IssueSearchFilters,
   IssueSegment,
@@ -39,6 +41,8 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const storeKey = {
   ruleSet: (id: string) => `jira-store::rule-set::${id}`,
   ruleSetIndex: 'jira-store::rule-set::index',
+  fieldMapping: (id: string) => `jira-store::field-mapping::${id}`,
+  fieldMappingIndex: 'jira-store::field-mapping::index',
   calendar: (id: string) => `jira-store::calendar::${id}`,
   calendarIndex: 'jira-store::calendar::index',
   snapshot: (issueKey: string) => `jira-store::snapshot::${issueKey}`,
@@ -95,18 +99,59 @@ const createDefaultCalendar = (): BusinessCalendar => ({
   afterHoursMode: 'business-hours',
 });
 
+const createDefaultFieldMapping = (): FieldMapping => ({
+  fieldMappingId: `field-mapping-${Date.now()}`,
+  name: 'Default Jira field mapping',
+  assigneeFieldKey: 'assignee',
+  statusFieldKey: 'status',
+  priorityFieldKey: 'priority',
+  resolutionFieldKey: 'resolutiondate',
+  teamFieldKey: undefined,
+  ownershipFieldKey: undefined,
+  responsibleOrganizationFieldKey: undefined,
+});
+
+const createDetectedTeamFieldMapping = (teamFieldKey: string): FieldMapping => ({
+  ...createDefaultFieldMapping(),
+  fieldMappingId: 'field-mapping-detected-team',
+  name: 'Detected Jira team field',
+  teamFieldKey,
+});
+
+const resolveEffectiveFieldMapping = (
+  fieldMapping: FieldMapping | undefined,
+  fallbackTeamFieldKey: string | undefined,
+): FieldMapping | undefined => {
+  if (fieldMapping?.teamFieldKey) {
+    return fieldMapping;
+  }
+
+  if (!fallbackTeamFieldKey) {
+    return fieldMapping;
+  }
+
+  return {
+    ...(fieldMapping ?? createDetectedTeamFieldMapping(fallbackTeamFieldKey)),
+    teamFieldKey: fallbackTeamFieldKey,
+  };
+};
+
 const createDefaultRuleSet = (calendarId: string): RuleSet => ({
   ruleSetId: `rule-set-${Date.now()}`,
   name: 'Default Rule Set',
   version: 1,
   projectKeys: [],
+  fieldMappingId: undefined,
   trackedAssignees: [],
   trackedTeams: [],
+  trackedOwnershipValues: [],
+  ownershipPrecedence: ['ownership', 'team', 'assignee'],
   startMode: 'assignment',
   activeStatuses: ['In Progress', 'Working'],
-  pausedStatuses: ['Waiting for customer', 'Blocked'],
+  pausedStatuses: ['Waiting for customer', 'Need More Info', 'Blocked'],
   stoppedStatuses: ['Done', 'Closed', 'Resolved'],
   resumeStatuses: ['In Progress', 'Working'],
+  resumeRules: [],
   businessCalendarId: calendarId,
   priorityOverrides: [],
   enabled: true,
@@ -126,12 +171,14 @@ export class JiraApplicationStore implements ApplicationStore {
       return;
     }
 
-    const [ruleSetIndex, calendarIndex] = await Promise.all([
+    const [ruleSetIndex, fieldMappingIndex, calendarIndex] = await Promise.all([
       kvs.get<string[]>(storeKey.ruleSetIndex),
+      kvs.get<string[]>(storeKey.fieldMappingIndex),
       kvs.get<string[]>(storeKey.calendarIndex),
     ]);
 
     let activeCalendarIds = calendarIndex ?? [];
+    let activeFieldMappingIds = fieldMappingIndex ?? [];
     if (activeCalendarIds.length === 0) {
       const calendar = createDefaultCalendar();
       await kvs.set(storeKey.calendar(calendar.calendarId), calendar);
@@ -139,8 +186,16 @@ export class JiraApplicationStore implements ApplicationStore {
       await kvs.set(storeKey.calendarIndex, activeCalendarIds);
     }
 
+    if (activeFieldMappingIds.length === 0) {
+      const fieldMapping = createDefaultFieldMapping();
+      await kvs.set(storeKey.fieldMapping(fieldMapping.fieldMappingId), fieldMapping);
+      activeFieldMappingIds = [fieldMapping.fieldMappingId];
+      await kvs.set(storeKey.fieldMappingIndex, activeFieldMappingIds);
+    }
+
     if ((ruleSetIndex ?? []).length === 0) {
       const ruleSet = createDefaultRuleSet(activeCalendarIds[0]);
+      ruleSet.fieldMappingId = activeFieldMappingIds[0];
       await kvs.set(storeKey.ruleSet(ruleSet.ruleSetId), ruleSet);
       await kvs.set(storeKey.ruleSetIndex, [ruleSet.ruleSetId]);
     }
@@ -158,10 +213,16 @@ export class JiraApplicationStore implements ApplicationStore {
     return (await kvs.get<string[]>(storeKey.calendarIndex)) ?? [];
   }
 
+  private async loadFieldMappingIndex(): Promise<string[]> {
+    await this.ensureDefaults();
+    return (await kvs.get<string[]>(storeKey.fieldMappingIndex)) ?? [];
+  }
+
   private async getRuleSetForProject(projectKey: string): Promise<RuleSet> {
-    const ruleSet = (await this.listRuleSets()).find(
+    const ruleSets = await this.listRuleSets();
+    const ruleSet = ruleSets.find(
       (item) => item.enabled && item.projectKeys.includes(projectKey),
-    );
+    ) ?? ruleSets.find((item) => item.enabled && item.projectKeys.length === 0);
     if (!ruleSet) {
       throw new Error(`No enabled rule set found for project ${projectKey}.`);
     }
@@ -174,6 +235,15 @@ export class JiraApplicationStore implements ApplicationStore {
       throw new Error(`Business calendar ${ruleSet.businessCalendarId} was not found.`);
     }
     return clone(calendar);
+  }
+
+  private async getFieldMappingForRuleSet(ruleSet: RuleSet): Promise<FieldMapping | undefined> {
+    if (!ruleSet.fieldMappingId) {
+      return undefined;
+    }
+
+    const mapping = await kvs.get<FieldMapping>(storeKey.fieldMapping(ruleSet.fieldMappingId));
+    return mapping ? clone(mapping) : undefined;
   }
 
   private async saveSnapshot(snapshot: IssueSnapshot): Promise<void> {
@@ -224,22 +294,57 @@ export class JiraApplicationStore implements ApplicationStore {
     return undefined;
   }
 
+  private getDynamicFields(fieldMapping?: FieldMapping): string[] {
+    return [
+      fieldMapping?.assigneeFieldKey,
+      fieldMapping?.statusFieldKey,
+      fieldMapping?.priorityFieldKey,
+      fieldMapping?.resolutionFieldKey,
+      fieldMapping?.teamFieldKey,
+      fieldMapping?.ownershipFieldKey,
+      fieldMapping?.responsibleOrganizationFieldKey,
+    ]
+      .filter((field): field is string => Boolean(field))
+      .filter((field, index, all) => all.indexOf(field) === index)
+      .filter(
+        (field) => ![
+          'assignee',
+          'status',
+          'priority',
+          'resolutiondate',
+          'project',
+          'summary',
+          'created',
+          'updated',
+        ].includes(field),
+      );
+  }
+
   private async syncIssue(
     issueKey: string,
     source: RebuildJob['source'],
     recordJob: boolean,
   ): Promise<IssueSummary> {
     const projectKey = issueKey.split('-')[0] ?? '';
-    const teamFieldKey = await this.resolveTeamFieldKey(projectKey ? [projectKey] : []);
-    const extraFields = teamFieldKey ? [teamFieldKey] : [];
-    const issue = await fetchIssueWithFields(issueKey, extraFields);
+    const preselectedRuleSet = await this.getRuleSetForProject(projectKey);
+    const preselectedFieldMapping = await this.getFieldMappingForRuleSet(preselectedRuleSet);
+    const fallbackTeamFieldKey = await this.resolveTeamFieldKey(projectKey ? [projectKey] : []);
+    const issue = await fetchIssueWithFields(issueKey, [
+      ...this.getDynamicFields(preselectedFieldMapping),
+      ...(fallbackTeamFieldKey && !preselectedFieldMapping?.teamFieldKey ? [fallbackTeamFieldKey] : []),
+    ]);
     const ruleSet = await this.getRuleSetForProject(issue.fields.project.key);
     const calendar = await this.getCalendarForRuleSet(ruleSet);
+    const fieldMapping = await this.getFieldMappingForRuleSet(ruleSet);
+    const effectiveFieldMapping = resolveEffectiveFieldMapping(
+      fieldMapping,
+      fallbackTeamFieldKey,
+    );
     const changelog = await fetchChangelog(issueKey);
     const snapshot = normalizeLiveJiraIssue({
       issue,
       changelog,
-      teamFieldKey,
+      fieldMapping: effectiveFieldMapping,
     });
     const computation = calculateIssueSla({ snapshot, ruleSet, calendar });
     const checkpoint: IssueCheckpoint = {
@@ -287,8 +392,9 @@ export class JiraApplicationStore implements ApplicationStore {
 
     const ruleSets = await this.listRuleSets();
     for (const ruleSet of ruleSets.filter((item) => item.enabled)) {
-      for (const projectKey of ruleSet.projectKeys) {
-        const teamFieldKey = await this.resolveTeamFieldKey([projectKey]);
+        for (const projectKey of ruleSet.projectKeys) {
+        const fieldMapping = await this.getFieldMappingForRuleSet(ruleSet);
+        const teamFieldKey = fieldMapping?.teamFieldKey ?? await this.resolveTeamFieldKey([projectKey]);
         const issues = await searchIssues(
           `project = "${projectKey}" ORDER BY updated DESC`,
           [
@@ -300,7 +406,8 @@ export class JiraApplicationStore implements ApplicationStore {
             'updated',
             'resolutiondate',
             'project',
-            ...(teamFieldKey ? [teamFieldKey] : []),
+            ...this.getDynamicFields(fieldMapping),
+            ...(teamFieldKey && !fieldMapping?.teamFieldKey ? [teamFieldKey] : []),
           ],
           50,
         );
@@ -315,7 +422,9 @@ export class JiraApplicationStore implements ApplicationStore {
   }
 
   private async refreshProjectSummaries(projectKey: string): Promise<void> {
-    const teamFieldKey = await this.resolveTeamFieldKey([projectKey]);
+    const ruleSet = await this.getRuleSetForProject(projectKey);
+    const fieldMapping = await this.getFieldMappingForRuleSet(ruleSet);
+    const teamFieldKey = fieldMapping?.teamFieldKey ?? await this.resolveTeamFieldKey([projectKey]);
     const issues = await searchIssues(
       `project = "${projectKey}" ORDER BY updated DESC`,
       [
@@ -327,7 +436,8 @@ export class JiraApplicationStore implements ApplicationStore {
         'updated',
         'resolutiondate',
         'project',
-        ...(teamFieldKey ? [teamFieldKey] : []),
+        ...this.getDynamicFields(fieldMapping),
+        ...(teamFieldKey && !fieldMapping?.teamFieldKey ? [teamFieldKey] : []),
       ],
       100,
     );
@@ -416,7 +526,29 @@ export class JiraApplicationStore implements ApplicationStore {
     let assignees: SelectorOption[] = [];
     let statuses: string[] = [];
     let teams: SelectorOption[] = [];
+    let jiraFields: SelectorOption[] = [];
     const teamFieldKey = projectKeys.length > 0 ? await this.resolveTeamFieldKey(projectKeys) : undefined;
+    const fieldMappings = await this.listFieldMappings();
+    const availableFieldIds = new Set<string>();
+
+    try {
+      const fields = await fetchJiraFields();
+      jiraFields = fields
+        .map((field) => ({
+          value: field.id,
+          label: field.name,
+          description: field.key && field.key !== field.id ? `${field.id} (${field.key})` : field.id,
+        }))
+        .sort((left, right) => left.label.localeCompare(right.label));
+      for (const field of fields) {
+        availableFieldIds.add(field.id);
+        if (field.key) {
+          availableFieldIds.add(field.key);
+        }
+      }
+    } catch (cause) {
+      warnings.push(cause instanceof Error ? cause.message : 'Unable to load Jira fields.');
+    }
 
     try {
       const jiraProjects = await fetchProjects();
@@ -505,15 +637,51 @@ export class JiraApplicationStore implements ApplicationStore {
     const fallbackStatuses = selectedRuleSet
       ? [...new Set([...commonStatuses, ...selectedRuleSet.activeStatuses, ...selectedRuleSet.pausedStatuses, ...selectedRuleSet.stoppedStatuses, ...selectedRuleSet.resumeStatuses])]
       : commonStatuses;
+    const fieldMappingDiagnostics = fieldMappings.map((mapping) => {
+      const messages: string[] = [];
+      const mappedFields = [
+        ['assignee', mapping.assigneeFieldKey],
+        ['status', mapping.statusFieldKey],
+        ['priority', mapping.priorityFieldKey],
+        ['resolution', mapping.resolutionFieldKey],
+        ['team', mapping.teamFieldKey],
+        ['ownership', mapping.ownershipFieldKey],
+        ['responsible organization', mapping.responsibleOrganizationFieldKey],
+      ] as const;
+
+      for (const [label, key] of mappedFields) {
+        if (!key) {
+          continue;
+        }
+        if (availableFieldIds.size === 0 || availableFieldIds.has(key)) {
+          messages.push(`Mapped ${label} to ${key}.`);
+        } else {
+          messages.push(`Mapped ${label} to ${key}, but Jira did not return that field during validation.`);
+        }
+      }
+
+      if (!mapping.ownershipFieldKey && !mapping.teamFieldKey) {
+        messages.push('No ownership/team custom field is mapped; ownership-field start mode will rely on tracked assignee fallback.');
+      }
+
+      const valid = messages.every((message) => !message.includes('did not return'));
+      return {
+        fieldMappingId: mapping.fieldMappingId,
+        valid,
+        messages,
+      };
+    });
 
     return {
       projects,
       assignees,
       teams,
       statuses: statuses.length > 0 ? statuses : fallbackStatuses,
+      jiraFields,
       warnings,
       teamFieldConfigured: Boolean(teamFieldKey),
       teamFieldKey,
+      fieldMappingDiagnostics,
     };
   }
 
@@ -526,6 +694,12 @@ export class JiraApplicationStore implements ApplicationStore {
     const index = await this.loadRuleSetIndex();
     const results = await Promise.all(index.map((id) => kvs.get<RuleSet>(storeKey.ruleSet(id))));
     return results.filter((item): item is RuleSet => Boolean(item)).map(clone);
+  }
+
+  async listFieldMappings(): Promise<FieldMapping[]> {
+    const index = await this.loadFieldMappingIndex();
+    const results = await Promise.all(index.map((id) => kvs.get<FieldMapping>(storeKey.fieldMapping(id))));
+    return results.filter((item): item is FieldMapping => Boolean(item)).map(clone);
   }
 
   async listCalendars(): Promise<BusinessCalendar[]> {
@@ -625,6 +799,19 @@ export class JiraApplicationStore implements ApplicationStore {
     return clone(nextRuleSet);
   }
 
+  async saveFieldMapping(fieldMapping: FieldMapping): Promise<FieldMapping> {
+    await this.ensureDefaults();
+    await kvs.set(storeKey.fieldMapping(fieldMapping.fieldMappingId), fieldMapping);
+
+    const index = await this.loadFieldMappingIndex();
+    if (!index.includes(fieldMapping.fieldMappingId)) {
+      await kvs.set(storeKey.fieldMappingIndex, [...index, fieldMapping.fieldMappingId]);
+    }
+
+    this.primed = false;
+    return clone(fieldMapping);
+  }
+
   async saveCalendar(calendar: BusinessCalendar): Promise<BusinessCalendar> {
     await this.ensureDefaults();
     await kvs.set(storeKey.calendar(calendar.calendarId), calendar);
@@ -687,8 +874,9 @@ export class JiraApplicationStore implements ApplicationStore {
       await this.primeSummariesIfNeeded();
     }
 
-    const [ruleSets, calendars, summaries, jobs, allSegments] = await Promise.all([
+    const [ruleSets, fieldMappings, calendars, summaries, jobs, allSegments] = await Promise.all([
       this.listRuleSets(),
+      this.listFieldMappings(),
       this.listCalendars(),
       this.listIssueSummaries(),
       this.listRebuildJobs(),
@@ -714,6 +902,7 @@ export class JiraApplicationStore implements ApplicationStore {
       summaries,
       selectedIssue,
       ruleSets,
+      fieldMappings,
       calendars,
       rebuildJobs: jobs,
       overview: this.buildOverview(summaries),

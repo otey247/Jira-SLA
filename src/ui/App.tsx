@@ -1,7 +1,18 @@
 import { useEffect, useState } from 'react';
 import { invoke, view } from '@forge/bridge';
 import { formatDuration } from '../domain/rules/businessHours';
-import type { BootstrapData, BootstrapRequest, BusinessCalendar, RuleSet, SelectorOption, StartMode, TimingMode, SurfaceKind } from '../domain/types';
+import type {
+  BootstrapData,
+  BootstrapRequest,
+  BusinessCalendar,
+  FieldMapping,
+  ResumeRule,
+  RuleSet,
+  SelectorOption,
+  StartMode,
+  TimingMode,
+  SurfaceKind,
+} from '../domain/types';
 import './styles.css';
 
 const detectSurface = async (): Promise<{ surface: SurfaceKind; issueKey?: string }> => {
@@ -35,6 +46,7 @@ const START_MODE_OPTIONS: { value: StartMode; label: string }[] = [
   { value: 'assignment', label: 'Assignment' },
   { value: 'status', label: 'Status change' },
   { value: 'assignment-or-status', label: 'Assignment or Status' },
+  { value: 'ownership-field', label: 'Ownership field' },
 ];
 
 const DAY_LABELS: { value: number; label: string }[] = [
@@ -70,6 +82,8 @@ type RuleSetDraft = RuleSet & {
   projectSearch?: string;
 };
 
+type FieldMappingDraft = FieldMapping;
+
 type CalendarDraft = BusinessCalendar & {
   newHoliday: string;
 };
@@ -77,6 +91,10 @@ type CalendarDraft = BusinessCalendar & {
 const toRuleSetDraft = (current: RuleSet): RuleSetDraft => ({
   ...current,
   projectSearch: '',
+});
+
+const toFieldMappingDraft = (current: FieldMapping): FieldMappingDraft => ({
+  ...current,
 });
 
 const toCalendarDraft = (current: BusinessCalendar): CalendarDraft => ({
@@ -93,9 +111,30 @@ const EMPTY_ADMIN_METADATA: BootstrapData['adminMetadata'] = {
   assignees: [],
   teams: [],
   statuses: [],
+  jiraFields: [],
   warnings: [],
   teamFieldConfigured: false,
+  fieldMappingDiagnostics: [],
 };
+
+const stringifyResumeRules = (resumeRules: ResumeRule[]): string => (
+  resumeRules.map((rule) => `${rule.fromStatus ?? '*'} -> ${rule.toStatus}`).join('\n')
+);
+
+const parseResumeRules = (value: string): ResumeRule[] => (
+  value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [fromStatus, toStatus] = line.split('->').map((part) => part.trim());
+      return {
+        fromStatus: fromStatus && fromStatus !== '*' ? fromStatus : undefined,
+        toStatus: toStatus ?? fromStatus,
+      };
+    })
+    .filter((rule) => rule.toStatus)
+);
 
 export const App = () => {
   const [data, setData] = useState<BootstrapData | null>(null);
@@ -103,6 +142,7 @@ export const App = () => {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [ruleSetDraft, setRuleSetDraft] = useState<RuleSetDraft | null>(null);
+  const [fieldMappingDraft, setFieldMappingDraft] = useState<FieldMappingDraft | null>(null);
   const [calendarDraft, setCalendarDraft] = useState<CalendarDraft | null>(null);
   const [adminMetadataOverride, setAdminMetadataOverride] = useState<BootstrapData['adminMetadata'] | null>(null);
 
@@ -133,6 +173,10 @@ export const App = () => {
 
   useEffect(() => {
     setRuleSetDraft(data?.ruleSets[0] ? toRuleSetDraft(data.ruleSets[0]) : null);
+    const initialFieldMapping = data?.ruleSets[0]?.fieldMappingId
+      ? data.fieldMappings.find((mapping) => mapping.fieldMappingId === data.ruleSets[0]?.fieldMappingId)
+      : data?.fieldMappings[0];
+    setFieldMappingDraft(initialFieldMapping ? toFieldMappingDraft(initialFieldMapping) : null);
     setCalendarDraft(data?.calendars[0] ? toCalendarDraft(data.calendars[0]) : null);
     setAdminMetadataOverride(null);
   }, [data]);
@@ -165,6 +209,9 @@ export const App = () => {
   const selectedSummary = data?.selectedIssue?.summary;
   const selectedSegments = data?.selectedIssue?.segments ?? [];
   const adminMetadata = adminMetadataOverride ?? data?.adminMetadata ?? EMPTY_ADMIN_METADATA;
+  const selectedFieldMappingDiagnostics = fieldMappingDraft
+    ? adminMetadata.fieldMappingDiagnostics.find((diagnostic) => diagnostic.fieldMappingId === fieldMappingDraft.fieldMappingId)
+    : undefined;
   const availableStatuses = ruleSetDraft
     ? [...new Set([
         ...adminMetadata.statuses,
@@ -226,6 +273,19 @@ export const App = () => {
     }
   };
 
+  const saveFieldMappingDraft = async (): Promise<void> => {
+    if (!fieldMappingDraft) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await invoke('saveFieldMapping', fieldMappingDraft);
+      await load(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveCalendarDraft = async (): Promise<void> => {
     if (!calendarDraft) {
       return;
@@ -269,8 +329,8 @@ export const App = () => {
         <article className="card"><span>Breaches</span><strong>{data.overview.breachCount}</strong></article>
         <article className="card"><span>Avg response</span><strong>{formatDuration(data.overview.averageResponseSeconds)}</strong></article>
         <article className="card"><span>Avg active</span><strong>{formatDuration(data.overview.averageActiveSeconds)}</strong></article>
-        <article className="card"><span>Total paused</span><strong>{formatDuration(data.overview.totalPausedSeconds)}</strong></article>
-      </section>
+          <article className="card"><span>Total paused</span><strong>{formatDuration(data.overview.totalPausedSeconds)}</strong></article>
+        </section>
 
       {data.surface === 'dashboardGadget' ? (
         <section className="grid two-up">
@@ -307,11 +367,12 @@ export const App = () => {
             <dl className="detail-grid">
               <div><dt>SLA start</dt><dd>{selectedSummary.slaStartedAt ?? 'Not started'}</dd></div>
               <div><dt>Response</dt><dd>{formatDuration(selectedSummary.responseSeconds)}</dd></div>
-              <div><dt>Active</dt><dd>{formatDuration(selectedSummary.activeSeconds)}</dd></div>
-              <div><dt>Paused</dt><dd>{formatDuration(selectedSummary.pausedSeconds)}</dd></div>
-              <div><dt>Outside hours</dt><dd>{formatDuration(selectedSummary.outsideHoursSeconds)}</dd></div>
-              <div><dt>Breach state</dt><dd>{selectedSummary.breachState}</dd></div>
-            </dl>
+                <div><dt>Active</dt><dd>{formatDuration(selectedSummary.activeSeconds)}</dd></div>
+                <div><dt>Paused</dt><dd>{formatDuration(selectedSummary.pausedSeconds)}</dd></div>
+                <div><dt>Waiting</dt><dd>{formatDuration(selectedSummary.waitingSeconds)}</dd></div>
+                <div><dt>Outside hours</dt><dd>{formatDuration(selectedSummary.outsideHoursSeconds)}</dd></div>
+                <div><dt>Breach state</dt><dd>{selectedSummary.breachState}</dd></div>
+              </dl>
             <h3>Timeline explanation</h3>
             <ol className="timeline">
               {selectedSegments.map((segment) => (
@@ -379,6 +440,23 @@ export const App = () => {
               <div className="form-grid">
                 <label><span>Name</span><input value={ruleSetDraft.name ?? ''} onChange={(e) => setRuleSetDraft((c) => c ? { ...c, name: e.target.value } : c)} /></label>
                 <label>
+                  <span>Field mapping</span>
+                  <select
+                    value={ruleSetDraft.fieldMappingId ?? ''}
+                    onChange={(e) => {
+                      const nextFieldMappingId = e.target.value || undefined;
+                      setRuleSetDraft((current) => current ? { ...current, fieldMappingId: nextFieldMappingId } : current);
+                      const selectedMapping = data.fieldMappings.find((mapping) => mapping.fieldMappingId === nextFieldMappingId);
+                      setFieldMappingDraft(selectedMapping ? toFieldMappingDraft(selectedMapping) : null);
+                    }}
+                  >
+                    <option value="">No explicit mapping</option>
+                    {data.fieldMappings.map((mapping) => (
+                      <option key={mapping.fieldMappingId} value={mapping.fieldMappingId}>{mapping.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
                   <span>Start mode</span>
                   <select value={ruleSetDraft.startMode} onChange={(e) => setRuleSetDraft((c) => c ? { ...c, startMode: e.target.value as StartMode } : c)}>
                     {START_MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -393,6 +471,26 @@ export const App = () => {
                 <label className="checkbox-row">
                   <input type="checkbox" checked={ruleSetDraft.enabled} onChange={(e) => setRuleSetDraft((c) => c ? { ...c, enabled: e.target.checked } : c)} />
                   <span>Enabled</span>
+                </label>
+                <label>
+                  <span>Tracked ownership values</span>
+                  <input
+                    value={ruleSetDraft.trackedOwnershipValues.join(', ')}
+                    onChange={(e) => setRuleSetDraft((c) => c ? { ...c, trackedOwnershipValues: e.target.value.split(',').map((value) => value.trim()).filter(Boolean) } : c)}
+                  />
+                </label>
+                <label>
+                  <span>Ownership precedence</span>
+                  <input
+                    value={ruleSetDraft.ownershipPrecedence.join(', ')}
+                    onChange={(e) => setRuleSetDraft((c) => c ? {
+                      ...c,
+                      ownershipPrecedence: e.target.value
+                        .split(',')
+                        .map((value) => value.trim())
+                        .filter((value): value is RuleSet['ownershipPrecedence'][number] => ['ownership', 'team', 'assignee'].includes(value)),
+                    } : c)}
+                  />
                 </label>
               </div>
 
@@ -459,6 +557,15 @@ export const App = () => {
                 </div>
               </fieldset>
 
+              <label>
+                <span>Resume rules (one per line, <code>from {'->'} to</code>)</span>
+                <textarea
+                  rows={5}
+                  value={stringifyResumeRules(ruleSetDraft.resumeRules)}
+                  onChange={(e) => setRuleSetDraft((c) => c ? { ...c, resumeRules: parseResumeRules(e.target.value) } : c)}
+                />
+              </label>
+
               {ruleSetDraft.trackedAssignees.length > 0 ? (
                 <div className="selection-summary">
                   <strong>Selected assignees:</strong>
@@ -472,8 +579,63 @@ export const App = () => {
                   <span>{ruleSetDraft.trackedTeams.map((value) => getOptionLabel(adminMetadata.teams, value)).join(', ')}</span>
                 </div>
               ) : null}
+
+              {ruleSetDraft.trackedOwnershipValues.length > 0 ? (
+                <div className="selection-summary">
+                  <strong>Tracked ownership values:</strong>
+                  <span>{ruleSetDraft.trackedOwnershipValues.join(', ')}</span>
+                </div>
+              ) : null}
             </article>
           )}
+
+          {fieldMappingDraft ? (
+            <article className="card">
+              <div className="section-header">
+                <div>
+                  <p className="eyebrow">Admin</p>
+                  <h2>Field mapping</h2>
+                </div>
+                <button onClick={() => void saveFieldMappingDraft()} disabled={saving}>Save field mapping</button>
+              </div>
+              <div className="form-grid">
+                <label><span>Name</span><input value={fieldMappingDraft.name ?? ''} onChange={(e) => setFieldMappingDraft((current) => current ? { ...current, name: e.target.value } : current)} /></label>
+                {[
+                  ['assigneeFieldKey', 'Assignee field'],
+                  ['statusFieldKey', 'Status field'],
+                  ['priorityFieldKey', 'Priority field'],
+                  ['resolutionFieldKey', 'Resolution field'],
+                  ['teamFieldKey', 'Team field'],
+                  ['ownershipFieldKey', 'Ownership field'],
+                  ['responsibleOrganizationFieldKey', 'Responsible organization field'],
+                ].map(([fieldKey, label]) => (
+                  <label key={fieldKey}>
+                    <span>{label}</span>
+                    <select
+                      value={(fieldMappingDraft as Record<string, string | undefined>)[fieldKey] ?? ''}
+                      onChange={(e) => setFieldMappingDraft((current) => current ? {
+                        ...current,
+                        [fieldKey]: e.target.value || undefined,
+                      } : current)}
+                    >
+                      <option value="">Use default / unmapped</option>
+                      {adminMetadata.jiraFields.map((field) => (
+                        <option key={field.value} value={field.value}>{field.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+              {selectedFieldMappingDiagnostics ? (
+                <div className={selectedFieldMappingDiagnostics.valid ? 'selection-summary' : 'selection-summary error'}>
+                  <strong>{selectedFieldMappingDiagnostics.valid ? 'Mapping is valid' : 'Mapping needs attention'}</strong>
+                  <ul className="warning-list">
+                    {selectedFieldMappingDiagnostics.messages.map((message) => <li key={message}>{message}</li>)}
+                  </ul>
+                </div>
+              ) : null}
+            </article>
+          ) : null}
 
           {calendarDraft && (
             <article className="card">
