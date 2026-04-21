@@ -118,6 +118,20 @@ const createDetectedTeamFieldMapping = (teamFieldKey: string): FieldMapping => (
   teamFieldKey,
 });
 
+const resolveEffectiveFieldMapping = (
+  fieldMapping: FieldMapping | undefined,
+  fallbackTeamFieldKey: string | undefined,
+): FieldMapping | undefined => {
+  if (fieldMapping?.teamFieldKey || !fallbackTeamFieldKey) {
+    return fieldMapping;
+  }
+
+  return {
+    ...(fieldMapping ?? createDetectedTeamFieldMapping(fallbackTeamFieldKey)),
+    teamFieldKey: fallbackTeamFieldKey,
+  };
+};
+
 const createDefaultRuleSet = (calendarId: string): RuleSet => ({
   ruleSetId: `rule-set-${Date.now()}`,
   name: 'Default Rule Set',
@@ -318,16 +332,10 @@ export class JiraApplicationStore implements ApplicationStore {
     const ruleSet = await this.getRuleSetForProject(issue.fields.project.key);
     const calendar = await this.getCalendarForRuleSet(ruleSet);
     const fieldMapping = await this.getFieldMappingForRuleSet(ruleSet);
-    const effectiveFieldMapping = fieldMapping?.teamFieldKey
-      ? fieldMapping
-      : (
-          fallbackTeamFieldKey
-            ? {
-                ...(fieldMapping ?? createDetectedTeamFieldMapping(fallbackTeamFieldKey)),
-                teamFieldKey: fallbackTeamFieldKey,
-              }
-            : fieldMapping
-        );
+    const effectiveFieldMapping = resolveEffectiveFieldMapping(
+      fieldMapping,
+      fallbackTeamFieldKey,
+    );
     const changelog = await fetchChangelog(issueKey);
     const snapshot = normalizeLiveJiraIssue({
       issue,
