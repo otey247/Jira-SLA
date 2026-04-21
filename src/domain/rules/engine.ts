@@ -87,7 +87,7 @@ const shouldStartSla = (state: WorkingState, ruleSet: RuleSet): boolean => {
   }
 };
 
-const describeWaitingReason = (_state: WorkingState, _ruleSet: RuleSet): string => {
+const describeWaitingReason = (): string => {
   return 'Timing is waiting because the issue left tracked ownership.';
 };
 
@@ -128,7 +128,7 @@ const classifyInterval = (
   if (!isTrackedOwnership(state, ruleSet)) {
     return {
       baseType: 'waiting',
-      reason: describeWaitingReason(state, ruleSet),
+      reason: describeWaitingReason(),
       timingMode,
     };
   }
