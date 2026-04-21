@@ -1,4 +1,10 @@
-import type { IssueEvent, IssueEventField, IssueSnapshot, WorkingState } from '../../domain/types';
+import type {
+  FieldMapping,
+  IssueEvent,
+  IssueEventField,
+  IssueSnapshot,
+  WorkingState,
+} from '../../domain/types';
 import type { JiraChangelogEntry } from '../../sla/types';
 import type { JiraIssueWithDynamicFields } from '../../api/jira';
 
@@ -23,6 +29,7 @@ export interface JiraIssueFixture {
     updated: string;
     initialAssigneeAccountId?: string;
     initialTeamLabel?: string;
+    initialOwnershipLabel?: string;
     initialStatus: string;
     initialPriority: string;
     resolutionDate?: string;
@@ -33,6 +40,7 @@ export interface JiraIssueFixture {
 const toInitialState = (issue: JiraIssueFixture): WorkingState => ({
   assigneeAccountId: issue.fields.initialAssigneeAccountId,
   teamLabel: issue.fields.initialTeamLabel,
+  ownershipLabel: issue.fields.initialOwnershipLabel,
   status: issue.fields.initialStatus,
   priority: issue.fields.initialPriority,
   resolved: false,
@@ -43,6 +51,7 @@ const toEvent = (historyId: string, created: string, item: JiraHistoryItem): Iss
   field: item.field,
   timestamp: created,
   changelogId: `${historyId}:${item.field}`,
+  sourceFieldName: item.field,
   from: item.from,
   to: item.to,
 });
@@ -72,36 +81,91 @@ const extractFieldLabel = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const extractAccountId = (value: unknown): string | undefined => {
+  if (typeof value === 'string' && value.trim()) {
+    return value;
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const candidates = [record.accountId, record.id, record.key, record.value];
+    return candidates.find((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  }
+  return undefined;
+};
+
+const getMappedValue = (
+  fields: JiraIssueWithDynamicFields['fields'],
+  primaryKey: string | undefined,
+  fallbackKey: string,
+): unknown => {
+  if (primaryKey && fields[primaryKey] !== undefined) {
+    return fields[primaryKey];
+  }
+  return fields[fallbackKey];
+};
+
 const toLiveInitialState = (
   issue: JiraIssueWithDynamicFields,
-  teamFieldKey?: string,
+  fieldMapping?: FieldMapping,
 ): WorkingState => ({
-  assigneeAccountId: issue.fields.assignee?.accountId,
-  teamLabel: teamFieldKey ? extractFieldLabel(issue.fields[teamFieldKey]) : undefined,
-  status: issue.fields.status?.name ?? 'Unknown',
-  priority: issue.fields.priority?.name ?? 'Unknown',
-  resolved: Boolean(issue.fields.resolutiondate),
+  assigneeAccountId:
+    extractAccountId(getMappedValue(issue.fields, fieldMapping?.assigneeFieldKey, 'assignee'))
+    ?? issue.fields.assignee?.accountId,
+  teamLabel: fieldMapping?.teamFieldKey
+    ? extractFieldLabel(issue.fields[fieldMapping.teamFieldKey])
+    : undefined,
+  ownershipLabel: fieldMapping?.ownershipFieldKey
+    ? extractFieldLabel(issue.fields[fieldMapping.ownershipFieldKey])
+    : fieldMapping?.responsibleOrganizationFieldKey
+      ? extractFieldLabel(issue.fields[fieldMapping.responsibleOrganizationFieldKey])
+      : undefined,
+  status:
+    extractFieldLabel(getMappedValue(issue.fields, fieldMapping?.statusFieldKey, 'status'))
+    ?? issue.fields.status?.name
+    ?? 'Unknown',
+  priority:
+    extractFieldLabel(getMappedValue(issue.fields, fieldMapping?.priorityFieldKey, 'priority'))
+    ?? issue.fields.priority?.name
+    ?? 'Unknown',
+  resolved: Boolean(
+    getMappedValue(issue.fields, fieldMapping?.resolutionFieldKey, 'resolutiondate'),
+  ),
 });
 
 const mapLiveChangeField = (
   field: string,
   fieldId: string | undefined,
-  teamFieldKey?: string,
+  fieldMapping?: FieldMapping,
 ): IssueEventField | undefined => {
-  if (field === 'assignee') {
+  if (field === (fieldMapping?.assigneeFieldKey ?? 'assignee') || fieldId === fieldMapping?.assigneeFieldKey || field === 'assignee') {
     return 'assignee';
   }
-  if (field === 'status') {
+  if (field === (fieldMapping?.statusFieldKey ?? 'status') || fieldId === fieldMapping?.statusFieldKey || field === 'status') {
     return 'status';
   }
-  if (field === 'priority') {
+  if (field === (fieldMapping?.priorityFieldKey ?? 'priority') || fieldId === fieldMapping?.priorityFieldKey || field === 'priority') {
     return 'priority';
   }
-  if (field === 'resolution') {
+  if (field === (fieldMapping?.resolutionFieldKey ?? 'resolution') || fieldId === fieldMapping?.resolutionFieldKey || field === 'resolution') {
     return 'resolution';
   }
-  if (teamFieldKey && (fieldId === teamFieldKey || field === teamFieldKey)) {
+  if (
+    fieldMapping?.teamFieldKey
+    && (fieldId === fieldMapping.teamFieldKey || field === fieldMapping.teamFieldKey)
+  ) {
     return 'team';
+  }
+  if (
+    fieldMapping?.ownershipFieldKey
+    && (fieldId === fieldMapping.ownershipFieldKey || field === fieldMapping.ownershipFieldKey)
+  ) {
+    return 'ownership';
+  }
+  if (
+    fieldMapping?.responsibleOrganizationFieldKey
+    && (fieldId === fieldMapping.responsibleOrganizationFieldKey || field === fieldMapping.responsibleOrganizationFieldKey)
+  ) {
+    return 'ownership';
   }
   return undefined;
 };
@@ -109,21 +173,21 @@ const mapLiveChangeField = (
 export const normalizeLiveJiraIssue = ({
   issue,
   changelog,
-  teamFieldKey,
+  fieldMapping,
 }: {
   issue: JiraIssueWithDynamicFields;
   changelog: JiraChangelogEntry[];
-  teamFieldKey?: string;
+  fieldMapping?: FieldMapping;
 }): IssueSnapshot => ({
   issueKey: issue.key,
   projectKey: issue.fields.project.key,
   summary: issue.fields.summary,
   createdAt: issue.fields.created,
   updatedAt: issue.fields.updated,
-  initialState: toLiveInitialState(issue, teamFieldKey),
+  initialState: toLiveInitialState(issue, fieldMapping),
   events: changelog.flatMap((entry) =>
     entry.items.flatMap((item) => {
-      const field = mapLiveChangeField(item.field, item.fieldId, teamFieldKey);
+      const field = mapLiveChangeField(item.field, item.fieldId, fieldMapping);
       if (!field) {
         return [];
       }
@@ -133,6 +197,8 @@ export const normalizeLiveJiraIssue = ({
           field,
           timestamp: entry.created,
           changelogId: `${entry.id}:${field}`,
+          sourceFieldId: item.fieldId,
+          sourceFieldName: item.field,
           from: field === 'resolution' ? item.fromString ?? item.from ?? undefined : item.from ?? item.fromString ?? undefined,
           to: field === 'resolution' ? item.toString ?? item.to ?? undefined : item.to ?? item.toString ?? undefined,
         },

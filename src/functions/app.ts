@@ -3,6 +3,7 @@ import type {
   BootstrapData,
   BootstrapRequest,
   BusinessCalendar,
+  FieldMapping,
   IssueSearchFilters,
   RuleSet,
 } from '../domain/types';
@@ -17,6 +18,7 @@ export const getIssueSummary = async (issueKey: string) => getIssueSlaSummary(is
 export const getIssueTimeline = async (issueKey: string) => explainIssueTimeline(issueKey);
 export const searchIssueSummaries = async (filters: IssueSearchFilters) => appStore.listIssueSummaries(filters);
 export const saveRuleSet = async (ruleSet: RuleSet) => appStore.saveRuleSet(ruleSet);
+export const saveFieldMapping = async (fieldMapping: FieldMapping) => appStore.saveFieldMapping(fieldMapping);
 export const saveBusinessCalendar = async (calendar: BusinessCalendar) => appStore.saveCalendar(calendar);
 export const getAdminMetadata = async (projectKeys?: string[]): Promise<AdminMetadata> => appStore.getAdminMetadata(projectKeys);
 export const markIssueForRebuild = async (issueKey: string) => appStore.markIssueForRebuild(issueKey);

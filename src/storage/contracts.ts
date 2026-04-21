@@ -3,6 +3,7 @@ import type {
   BootstrapData,
   BootstrapRequest,
   BusinessCalendar,
+  FieldMapping,
   IssueCheckpoint,
   IssueSearchFilters,
   IssueSegment,
@@ -15,6 +16,7 @@ import type {
 
 export interface ApplicationStore {
   listRuleSets(): Promise<RuleSet[]>;
+  listFieldMappings(): Promise<FieldMapping[]>;
   listCalendars(): Promise<BusinessCalendar[]>;
   listRebuildJobs(): Promise<RebuildJob[]>;
   getIssueSnapshot(issueKey: string): Promise<IssueSnapshot | undefined>;
@@ -22,6 +24,7 @@ export interface ApplicationStore {
   getIssueSegments(issueKey: string): Promise<IssueSegment[]>;
   listIssueSummaries(filters?: IssueSearchFilters): Promise<IssueSummary[]>;
   saveRuleSet(ruleSet: RuleSet): Promise<RuleSet>;
+  saveFieldMapping(fieldMapping: FieldMapping): Promise<FieldMapping>;
   saveCalendar(calendar: BusinessCalendar): Promise<BusinessCalendar>;
   markIssueForRebuild(issueKey: string): Promise<RebuildJob>;
   recomputeIssue(issueKey: string, source: RebuildJob['source']): Promise<IssueSummary>;

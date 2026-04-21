@@ -11,6 +11,7 @@ import type {
   WorkingState,
 } from '../types';
 import { secondsBetween, splitIntervalByBusinessHours } from './businessHours';
+import { shouldResumeFromStatusPause } from './stateMachine';
 
 interface IntervalClassification {
   baseType: SegmentType;
@@ -18,16 +19,49 @@ interface IntervalClassification {
   timingMode: TimingMode;
 }
 
-const isTrackedOwnership = (state: WorkingState, ruleSet: RuleSet): boolean => {
-  const assigneeTracked = state.assigneeAccountId ? ruleSet.trackedAssignees.includes(state.assigneeAccountId) : false;
-  const teamTracked = state.teamLabel ? ruleSet.trackedTeams.includes(state.teamLabel) : false;
+const isTrackedAssignee = (state: WorkingState, ruleSet: RuleSet): boolean => (
+  Boolean(state.assigneeAccountId && ruleSet.trackedAssignees.includes(state.assigneeAccountId))
+);
 
-  if (ruleSet.trackedAssignees.length === 0 && ruleSet.trackedTeams.length === 0) {
-    return Boolean(state.assigneeAccountId);
+const isTrackedTeam = (state: WorkingState, ruleSet: RuleSet): boolean => (
+  Boolean(state.teamLabel && ruleSet.trackedTeams.includes(state.teamLabel))
+);
+
+const isTrackedOwnershipField = (state: WorkingState, ruleSet: RuleSet): boolean => (
+  Boolean(state.ownershipLabel && ruleSet.trackedOwnershipValues.includes(state.ownershipLabel))
+);
+
+const resolveTrackedOwnershipSource = (state: WorkingState, ruleSet: RuleSet): string | undefined => {
+  const precedence = ruleSet.ownershipPrecedence.length > 0
+    ? ruleSet.ownershipPrecedence
+    : ['ownership', 'team', 'assignee'];
+
+  if (
+    ruleSet.trackedAssignees.length === 0
+    && ruleSet.trackedTeams.length === 0
+    && ruleSet.trackedOwnershipValues.length === 0
+  ) {
+    return state.ownershipLabel ?? state.teamLabel ?? state.assigneeAccountId;
   }
 
-  return assigneeTracked || teamTracked;
+  for (const source of precedence) {
+    if (source === 'ownership' && isTrackedOwnershipField(state, ruleSet)) {
+      return state.ownershipLabel;
+    }
+    if (source === 'team' && isTrackedTeam(state, ruleSet)) {
+      return state.teamLabel;
+    }
+    if (source === 'assignee' && isTrackedAssignee(state, ruleSet)) {
+      return state.assigneeAccountId;
+    }
+  }
+
+  return undefined;
 };
+
+const isTrackedOwnership = (state: WorkingState, ruleSet: RuleSet): boolean => (
+  Boolean(resolveTrackedOwnershipSource(state, ruleSet))
+);
 
 const isActiveStatus = (state: WorkingState, ruleSet: RuleSet): boolean => ruleSet.activeStatuses.includes(state.status);
 const isPausedStatus = (state: WorkingState, ruleSet: RuleSet): boolean => ruleSet.pausedStatuses.includes(state.status);
@@ -46,17 +80,28 @@ const shouldStartSla = (state: WorkingState, ruleSet: RuleSet): boolean => {
       return isActiveStatus(state, ruleSet);
     case 'assignment-or-status':
       return isTrackedOwnership(state, ruleSet) || isActiveStatus(state, ruleSet);
+    case 'ownership-field':
+      return Boolean(resolveTrackedOwnershipSource(state, ruleSet));
     default:
       return false;
   }
 };
 
-const describePausedReason = (state: WorkingState, ruleSet: RuleSet): string => {
-  if (!isTrackedOwnership(state, ruleSet)) {
-    return 'Timing paused because the issue left tracked ownership.';
+const describeWaitingReason = (state: WorkingState, ruleSet: RuleSet): string => {
+  const ownershipValue = resolveTrackedOwnershipSource(state, ruleSet);
+  if (ownershipValue) {
+    return `Timing is waiting because ownership "${ownershipValue}" is not currently in a counted working status.`;
   }
+  return 'Timing is waiting because the issue left tracked ownership.';
+};
+
+const describePausedReason = (state: WorkingState): string => {
   return `Timing paused because status ${state.status} is configured as a paused state.`;
 };
+
+const describeResumeGateReason = (pausedStatus: string): string => (
+  `Timing remains paused after leaving ${pausedStatus} until a configured resume rule matches.`
+);
 
 const classifyInterval = (
   state: WorkingState,
@@ -64,6 +109,7 @@ const classifyInterval = (
   calendar: BusinessCalendar,
   hasStarted: boolean,
   hasSeenActive: boolean,
+  statusPauseGate: { pausedStatus: string } | null,
 ): IntervalClassification => {
   const timingMode = getTimingMode(state, ruleSet, calendar);
 
@@ -83,10 +129,26 @@ const classifyInterval = (
     };
   }
 
-  if (!isTrackedOwnership(state, ruleSet) || isPausedStatus(state, ruleSet)) {
+  if (!isTrackedOwnership(state, ruleSet)) {
+    return {
+      baseType: 'waiting',
+      reason: describeWaitingReason(state, ruleSet),
+      timingMode,
+    };
+  }
+
+  if (isPausedStatus(state, ruleSet)) {
     return {
       baseType: 'paused',
-      reason: describePausedReason(state, ruleSet),
+      reason: describePausedReason(state),
+      timingMode,
+    };
+  }
+
+  if (statusPauseGate) {
+    return {
+      baseType: 'paused',
+      reason: describeResumeGateReason(statusPauseGate.pausedStatus),
       timingMode,
     };
   }
@@ -126,6 +188,11 @@ const applyEvent = (state: WorkingState, event: IssueEvent): WorkingState => {
         ...state,
         teamLabel: event.to,
       };
+    case 'ownership':
+      return {
+        ...state,
+        ownershipLabel: event.to,
+      };
     case 'status':
       return {
         ...state,
@@ -159,6 +226,7 @@ const pushSegment = (
     previous
     && previous.segmentType === segment.segmentType
     && previous.assigneeAccountId === segment.assigneeAccountId
+    && previous.ownershipLabel === segment.ownershipLabel
     && previous.status === segment.status
     && previous.priority === segment.priority
     && previous.reason === segment.reason
@@ -210,6 +278,7 @@ const emitSegmentsForInterval = ({
       ruleVersion: ruleSet.version,
       assigneeAccountId: state.assigneeAccountId,
       teamLabel: state.teamLabel,
+      ownershipLabel: state.ownershipLabel,
       status: state.status,
       priority: state.priority,
       segmentType: classification.baseType,
@@ -234,6 +303,7 @@ const emitSegmentsForInterval = ({
       ruleVersion: ruleSet.version,
       assigneeAccountId: state.assigneeAccountId,
       teamLabel: state.teamLabel,
+      ownershipLabel: state.ownershipLabel,
       status: state.status,
       priority: state.priority,
       segmentType: classification.baseType,
@@ -257,6 +327,7 @@ const emitSegmentsForInterval = ({
       ruleVersion: ruleSet.version,
       assigneeAccountId: state.assigneeAccountId,
       teamLabel: state.teamLabel,
+      ownershipLabel: state.ownershipLabel,
       status: state.status,
       priority: state.priority,
       segmentType: chunk.isBusinessTime ? classification.baseType : 'outside-hours',
@@ -291,6 +362,7 @@ export const calculateIssueSla = ({
   let previousEventId = 'issue-created';
   let slaStartedAt = shouldStartSla(state, ruleSet) ? snapshot.createdAt : undefined;
   let hasSeenActive = false;
+  let statusPauseGate: { pausedStatus: string } | null = null;
 
   for (const event of [...events, {
     kind: 'change' as const,
@@ -299,7 +371,14 @@ export const calculateIssueSla = ({
     changelogId: 'issue-terminal',
   }]) {
     if (new Date(event.timestamp) > new Date(cursor)) {
-      const classification = classifyInterval(state, ruleSet, calendar, Boolean(slaStartedAt), hasSeenActive);
+      const classification = classifyInterval(
+        state,
+        ruleSet,
+        calendar,
+        Boolean(slaStartedAt),
+        hasSeenActive,
+        statusPauseGate,
+      );
       if (classification.baseType === 'active') {
         hasSeenActive = true;
       }
@@ -322,6 +401,21 @@ export const calculateIssueSla = ({
       previousEventId = event.changelogId;
       if (!slaStartedAt && shouldStartSla(state, ruleSet)) {
         slaStartedAt = event.timestamp;
+      }
+      if (isPausedStatus(state, ruleSet)) {
+        statusPauseGate = { pausedStatus: state.status };
+      } else if (
+        statusPauseGate
+        && isTrackedOwnership(state, ruleSet)
+        && !isStoppedStatus(state, ruleSet)
+        && shouldResumeFromStatusPause({
+          previousStatus: statusPauseGate.pausedStatus,
+          nextStatus: state.status,
+          resumeStatuses: ruleSet.resumeStatuses,
+          resumeRules: ruleSet.resumeRules,
+        })
+      ) {
+        statusPauseGate = null;
       }
       if (isActiveStatus(state, ruleSet)) {
         hasSeenActive = true;

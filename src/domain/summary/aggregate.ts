@@ -80,6 +80,7 @@ export const buildIssueSummary = ({
   const responseSeconds = segments.reduce((total, segment) => total + (segment.countsTowardResponse ? segment.businessSeconds : 0), 0);
   const activeSeconds = segments.reduce((total, segment) => total + (segment.countsTowardActive ? segment.businessSeconds : 0), 0);
   const pausedSeconds = segments.reduce((total, segment) => total + (segment.segmentType === 'paused' ? segment.rawSeconds : 0), 0);
+  const waitingSeconds = segments.reduce((total, segment) => total + (segment.segmentType === 'waiting' ? segment.rawSeconds : 0), 0);
   const outsideHoursSeconds = segments.reduce((total, segment) => total + (segment.segmentType === 'outside-hours' ? segment.rawSeconds : 0), 0);
   const assigneeMetrics = getAssigneeMetrics(segments);
   const currentState = segments.at(-1)?.segmentType ?? 'untracked';
@@ -94,9 +95,12 @@ export const buildIssueSummary = ({
     responseSeconds,
     activeSeconds,
     pausedSeconds,
+    waitingSeconds,
     outsideHoursSeconds,
     breachState: 'healthy',
     currentAssignee: snapshot.initialState.assigneeAccountId,
+    currentTeam: snapshot.initialState.teamLabel,
+    currentOwnership: snapshot.initialState.ownershipLabel,
     currentPriority: snapshot.initialState.priority,
     recomputedAt,
     slaStartedAt,
@@ -107,6 +111,7 @@ export const buildIssueSummary = ({
   const currentSegment = segments.at(-1);
   if (currentSegment) {
     summary.currentAssignee = currentSegment.assigneeAccountId;
+    summary.currentTeam = currentSegment.teamLabel;
     summary.currentPriority = currentSegment.priority;
   }
 

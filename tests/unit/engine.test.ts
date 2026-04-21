@@ -40,6 +40,71 @@ describe('calculateIssueSla', () => {
     expect(result.summary.outsideHoursSeconds).toBe(0);
     expect(result.summary.breachState).toBe('healthy');
   });
+
+  it('starts SLA on ownership transfer and excludes pre-ownership queue time', () => {
+    const snapshot = normalizeJiraIssue(sampleIssues[3]);
+    const result = calculateIssueSla({ snapshot, ruleSet, calendar });
+
+    expect(result.summary.slaStartedAt).toBe('2026-04-06T10:00:00.000Z');
+    expect(result.summary.responseSeconds).toBe(3600);
+    expect(result.summary.activeSeconds).toBe(5400);
+    expect(result.summary.pausedSeconds).toBe(5400);
+    expect(result.summary.waitingSeconds).toBe(0);
+    expect(result.segments.map((segment) => segment.segmentType)).toEqual([
+      'untracked',
+      'response',
+      'active',
+      'paused',
+      'paused',
+      'active',
+    ]);
+  });
+
+  it('tracks waiting time separately when ownership leaves the tracked team', () => {
+    const snapshot = normalizeJiraIssue({
+      key: 'ABC-901',
+      fields: {
+        projectKey: 'ABC',
+        summary: 'Ownership leaves and returns',
+        created: '2026-04-06T09:00:00.000Z',
+        updated: '2026-04-06T13:00:00.000Z',
+        initialStatus: 'Assigned',
+        initialPriority: 'P2',
+        initialOwnershipLabel: 'Capgemini',
+      },
+      changelog: [
+        {
+          id: '9011',
+          created: '2026-04-06T10:00:00.000Z',
+          items: [{ field: 'status', from: 'Assigned', to: 'In Progress' }],
+        },
+        {
+          id: '9012',
+          created: '2026-04-06T11:00:00.000Z',
+          items: [{ field: 'ownership', from: 'Capgemini', to: 'Customer' }],
+        },
+        {
+          id: '9013',
+          created: '2026-04-06T12:00:00.000Z',
+          items: [{ field: 'ownership', from: 'Customer', to: 'Capgemini' }],
+        },
+        {
+          id: '9014',
+          created: '2026-04-06T13:00:00.000Z',
+          items: [
+            { field: 'status', from: 'In Progress', to: 'Done' },
+            { field: 'resolution', to: 'Completed' },
+          ],
+        },
+      ],
+    });
+
+    const result = calculateIssueSla({ snapshot, ruleSet, calendar });
+
+    expect(result.summary.waitingSeconds).toBe(3600);
+    expect(result.summary.pausedSeconds).toBe(0);
+    expect(result.segments.some((segment) => segment.segmentType === 'waiting')).toBe(true);
+  });
 });
 
 describe('MemoryApplicationStore', () => {

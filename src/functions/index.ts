@@ -8,6 +8,7 @@ import {
   markIssueForRebuild,
   runIssueRebuild,
   saveBusinessCalendar,
+  saveFieldMapping,
   saveRuleSet,
   searchIssueSummaries,
 } from './app';
@@ -39,6 +40,7 @@ resolver.define('getIssueSummary', async ({ payload }) => getIssueSummary(issueP
 resolver.define('getIssueTimeline', async ({ payload }) => getIssueTimeline(issuePayload(payload).issueKey));
 resolver.define('searchIssueSummaries', async ({ payload }) => searchIssueSummaries(payload ?? {}));
 resolver.define('saveRuleSet', async ({ payload }) => saveRuleSet(payload));
+resolver.define('saveFieldMapping', async ({ payload }) => saveFieldMapping(payload));
 resolver.define('saveBusinessCalendar', async ({ payload }) => saveBusinessCalendar(payload));
 resolver.define('getAdminMetadata', async ({ payload }) => getAdminMetadata(adminMetadataPayload(payload).projectKeys ?? []));
 resolver.define('markIssueForRebuild', async ({ payload }) => markIssueForRebuild(issuePayload(payload).issueKey));

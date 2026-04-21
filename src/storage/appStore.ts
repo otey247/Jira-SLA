@@ -4,6 +4,7 @@ import type {
   BootstrapData,
   BootstrapRequest,
   BusinessCalendar,
+  FieldMapping,
   DashboardMetric,
   IssueCheckpoint,
   IssueSearchFilters,
@@ -17,7 +18,12 @@ import type {
 import { normalizeJiraIssue } from '../integrations/jira/normalize';
 import type { ApplicationStore } from './contracts';
 import { JiraApplicationStore } from './jiraApplicationStore';
-import { sampleCalendars, sampleIssues, sampleRuleSets } from './seed';
+import {
+  sampleCalendars,
+  sampleFieldMappings,
+  sampleIssues,
+  sampleRuleSets,
+} from './seed';
 
 const average = (values: number[]): number => (values.length > 0 ? Math.round(values.reduce((total, value) => total + value, 0) / values.length) : 0);
 
@@ -26,6 +32,7 @@ const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 export class MemoryApplicationStore implements ApplicationStore {
   private readonly snapshots = new Map<string, IssueSnapshot>();
   private readonly ruleSets = new Map<string, RuleSet>();
+  private readonly fieldMappings = new Map<string, FieldMapping>();
   private readonly calendars = new Map<string, BusinessCalendar>();
   private readonly summaries = new Map<string, IssueSummary>();
   private readonly segments = new Map<string, IssueSegment[]>();
@@ -35,10 +42,12 @@ export class MemoryApplicationStore implements ApplicationStore {
   constructor({
     issues = sampleIssues,
     ruleSets = sampleRuleSets,
+    fieldMappings = sampleFieldMappings,
     calendars = sampleCalendars,
   }: {
     issues?: typeof sampleIssues;
     ruleSets?: RuleSet[];
+    fieldMappings?: FieldMapping[];
     calendars?: BusinessCalendar[];
   } = {}) {
     for (const issue of issues) {
@@ -47,6 +56,9 @@ export class MemoryApplicationStore implements ApplicationStore {
     }
     for (const ruleSet of ruleSets) {
       this.ruleSets.set(ruleSet.ruleSetId, clone(ruleSet));
+    }
+    for (const fieldMapping of fieldMappings) {
+      this.fieldMappings.set(fieldMapping.fieldMappingId, clone(fieldMapping));
     }
     for (const calendar of calendars) {
       this.calendars.set(calendar.calendarId, clone(calendar));
@@ -101,6 +113,10 @@ export class MemoryApplicationStore implements ApplicationStore {
 
   async listRuleSets(): Promise<RuleSet[]> {
     return [...this.ruleSets.values()].map(clone);
+  }
+
+  async listFieldMappings(): Promise<FieldMapping[]> {
+    return [...this.fieldMappings.values()].map(clone);
   }
 
   async listCalendars(): Promise<BusinessCalendar[]> {
@@ -173,6 +189,11 @@ export class MemoryApplicationStore implements ApplicationStore {
     }
 
     return clone(nextRuleSet);
+  }
+
+  async saveFieldMapping(fieldMapping: FieldMapping): Promise<FieldMapping> {
+    this.fieldMappings.set(fieldMapping.fieldMappingId, clone(fieldMapping));
+    return clone(fieldMapping);
   }
 
   async saveCalendar(calendar: BusinessCalendar): Promise<BusinessCalendar> {
@@ -286,14 +307,43 @@ export class MemoryApplicationStore implements ApplicationStore {
         ...ruleSet.resumeStatuses,
       ]),
     )].sort((left, right) => left.localeCompare(right));
+    const jiraFields = [...this.fieldMappings.values()]
+      .flatMap((mapping) => [
+        mapping.assigneeFieldKey,
+        mapping.statusFieldKey,
+        mapping.priorityFieldKey,
+        mapping.resolutionFieldKey,
+        mapping.teamFieldKey,
+        mapping.ownershipFieldKey,
+        mapping.responsibleOrganizationFieldKey,
+      ])
+      .filter((field): field is string => Boolean(field))
+      .filter((field, index, all) => all.indexOf(field) === index)
+      .sort((left, right) => left.localeCompare(right))
+      .map((field) => ({ value: field, label: field }));
+    const fieldMappingDiagnostics = [...this.fieldMappings.values()].map((mapping) => {
+      const messages = [
+        mapping.ownershipFieldKey
+          ? `Ownership field mapped to ${mapping.ownershipFieldKey}.`
+          : 'Ownership field is not mapped; ownership-field start mode will fall back to team/assignee precedence.',
+      ];
+      return {
+        fieldMappingId: mapping.fieldMappingId,
+        valid: true,
+        messages,
+      };
+    });
 
     return {
       projects,
       assignees,
       teams,
       statuses,
+      jiraFields,
       warnings: ['Seed mode is enabled; issue data and selector options come from local fixtures.'],
-      teamFieldConfigured: false,
+      teamFieldConfigured: jiraFields.some((field) => field.value === 'Team'),
+      teamFieldKey: jiraFields.find((field) => field.value === 'Team')?.value,
+      fieldMappingDiagnostics,
     };
   }
 
@@ -315,6 +365,7 @@ export class MemoryApplicationStore implements ApplicationStore {
       summaries,
       selectedIssue,
       ruleSets: await this.listRuleSets(),
+      fieldMappings: await this.listFieldMappings(),
       calendars: await this.listCalendars(),
       rebuildJobs: await this.listRebuildJobs(),
       overview: this.buildOverview(summaries),

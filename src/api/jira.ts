@@ -21,6 +21,18 @@ export interface JiraFieldNameMap {
   [fieldId: string]: string;
 }
 
+export interface JiraFieldDefinition {
+  id: string;
+  key?: string;
+  name: string;
+  schema?: {
+    type?: string;
+    items?: string;
+    custom?: string;
+    customId?: number;
+  };
+}
+
 export type JiraIssueWithDynamicFields = JiraIssue & {
   fields: JiraIssue['fields'] & Record<string, unknown>;
 };
@@ -229,6 +241,16 @@ export async function fetchProjects(): Promise<JiraProject[]> {
   }
 
   return projects;
+}
+
+export async function fetchJiraFields(): Promise<JiraFieldDefinition[]> {
+  const response = await api.asApp().requestJira(route`/rest/api/3/field`);
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Jira fields: ${response.status}`);
+  }
+
+  return (await response.json()) as JiraFieldDefinition[];
 }
 
 export async function fetchAssignableUsers(projectKey: string): Promise<JiraUser[]> {
