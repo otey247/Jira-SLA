@@ -100,7 +100,7 @@ export default function IssueExplorer() {
 
   return (
     <div>
-      <h2 style={{ fontSize: '16px', marginBottom: '16px' }}>Issue Explorer</h2>
+      <h2 style={{ fontSize: '16px', marginBottom: '16px' }}>Tracked Issues</h2>
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
         <input

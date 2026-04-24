@@ -235,7 +235,7 @@ Make this the main app tab.
 Tabs:
 
 * Overview
-* Issue Explorer
+* Tracked Issues
 * Assignee Analytics
 * Rule Sets
 * Calendars

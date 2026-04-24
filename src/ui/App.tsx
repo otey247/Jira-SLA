@@ -391,8 +391,13 @@ export const App = () => {
     return <div className="shell"><p>Loading SLA analytics…</p></div>;
   }
 
+  const shellClassName = [
+    'shell',
+    data.surface === 'projectPage' || data.surface === 'dashboardGadget' ? 'shell-wide' : '',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className="shell">
+    <div className={shellClassName}>
       <header className="hero">
         <div>
           <p className="eyebrow">Jira SLA Analytics</p>
@@ -440,7 +445,7 @@ export const App = () => {
           <article className="card">
             <div className="section-header">
               <div>
-                <p className="eyebrow">Issue detail</p>
+                <p className="eyebrow">SLA breakdown</p>
                 <h2>{selectedSummary.issueKey}</h2>
                 <p>{selectedSummary.summary}</p>
               </div>
@@ -517,7 +522,7 @@ export const App = () => {
           </article>
 
           <article className="card">
-            <h2>Issue explorer</h2>
+            <h2>Tracked issues</h2>
             <table>
               <thead>
                 <tr>

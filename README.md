@@ -56,7 +56,7 @@ The app is positioned as read-only extraction/reporting for Jira issue history.
 
 ## App surfaces
 
-- **Jira project page** – KPI cards, issue explorer, assignee analytics, rule
+- **Jira project page** – KPI cards, tracked issues, assignee analytics, rule
   set administration, field mappings, calendars, and rebuild activity
 - **Jira issue panel** – per-ticket SLA state, response/active/paused/waiting
   metrics, breach status, effective clock policy, derived-data integrity, and
@@ -65,6 +65,23 @@ The app is positioned as read-only extraction/reporting for Jira issue history.
 - **Scheduled trigger + automation action** – recompute summaries from Jira
   changelog updates
 - **Rovo agent + actions** – query precomputed SLA summaries conversationally
+
+## Reading a ticket timeline
+
+The issue panel is designed to explain a single ticket's SLA timeline in
+business terms, not just show totals.
+
+- `untracked` means SLA has not started yet
+- `response` means the tracked team owns the ticket and the response clock is running
+- `active` means counted handling time is accruing
+- `paused` means the ticket is still in scope, but timing is intentionally paused
+- `waiting` means the SLA had started, but ownership moved outside the tracked provider
+- `outside-hours` means elapsed time existed, but the business calendar excluded it from counted SLA time
+- `stopped` means the issue is resolved or otherwise terminal
+
+When reading the timeline, the key questions are: when ownership became
+tracked, when active work began, whether any pauses were intentional, and
+whether excluded time came from external waiting or from the business calendar.
 
 ## Local validation
 

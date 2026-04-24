@@ -174,6 +174,40 @@ const createDefaultRuleSet = (calendarId: string): RuleSet => ({
   defaultResolutionThresholdSeconds: 54000,
 });
 
+const normalizeRuleSet = (ruleSet: RuleSet): RuleSet => {
+  const normalizedProjectKeys = Array.isArray(ruleSet.projectKeys) ? ruleSet.projectKeys : [];
+  const normalizedActiveStatuses = Array.isArray(ruleSet.activeStatuses) ? ruleSet.activeStatuses : [];
+  const normalizedPausedStatuses = Array.isArray(ruleSet.pausedStatuses) ? ruleSet.pausedStatuses : [];
+  const normalizedStoppedStatuses = Array.isArray(ruleSet.stoppedStatuses) ? ruleSet.stoppedStatuses : [];
+  const normalizedResumeStatuses = Array.isArray(ruleSet.resumeStatuses) ? ruleSet.resumeStatuses : [];
+
+  return {
+    ...ruleSet,
+    projectKeys: normalizedProjectKeys,
+    trackedAssignees: Array.isArray(ruleSet.trackedAssignees) ? ruleSet.trackedAssignees : [],
+    trackedTeams: Array.isArray(ruleSet.trackedTeams) ? ruleSet.trackedTeams : [],
+    trackedOwnershipValues: Array.isArray(ruleSet.trackedOwnershipValues) ? ruleSet.trackedOwnershipValues : [],
+    ownershipPrecedence: Array.isArray(ruleSet.ownershipPrecedence) && ruleSet.ownershipPrecedence.length > 0
+      ? ruleSet.ownershipPrecedence
+      : ['ownership', 'team', 'assignee'],
+    responseStartMode: ruleSet.responseStartMode ?? ruleSet.startMode,
+    activeStartMode: ruleSet.activeStartMode ?? 'status',
+    activeStatuses: normalizedActiveStatuses,
+    pausedStatuses: normalizedPausedStatuses,
+    stoppedStatuses: normalizedStoppedStatuses,
+    resumeStatuses: normalizedResumeStatuses,
+    resumeRules: Array.isArray(ruleSet.resumeRules) ? ruleSet.resumeRules : [],
+    priorityOverrides: Array.isArray(ruleSet.priorityOverrides) ? ruleSet.priorityOverrides : [],
+    enabledClocks: Array.isArray(ruleSet.enabledClocks) && ruleSet.enabledClocks.length > 0
+      ? ruleSet.enabledClocks
+      : ['response', 'active'],
+    breachBasis: ruleSet.breachBasis ?? 'active',
+    defaultCombinedThresholdSeconds: ruleSet.defaultCombinedThresholdSeconds
+      ?? ((ruleSet.defaultResponseThresholdSeconds ?? 7200) + (ruleSet.defaultActiveThresholdSeconds ?? 28800)),
+    defaultResolutionThresholdSeconds: ruleSet.defaultResolutionThresholdSeconds ?? 54000,
+  };
+};
+
 export class JiraApplicationStore implements ApplicationStore {
   private readonly configuredTeamFieldKey = process.env.TEAM_FIELD_KEY?.trim() || undefined;
   private defaultsEnsured = false;
@@ -236,7 +270,7 @@ export class JiraApplicationStore implements ApplicationStore {
     const ruleSets = await this.listRuleSets();
     const ruleSet = ruleSets.find(
       (item) => item.enabled && item.projectKeys.includes(projectKey),
-    ) ?? ruleSets.find((item) => item.enabled && item.projectKeys.length === 0);
+    ) ?? ruleSets.find((item) => item.enabled && (item.projectKeys?.length ?? 0) === 0);
     if (!ruleSet) {
       throw new Error(`No enabled rule set found for project ${projectKey}.`);
     }
@@ -782,7 +816,10 @@ export class JiraApplicationStore implements ApplicationStore {
   async listRuleSets(): Promise<RuleSet[]> {
     const index = await this.loadRuleSetIndex();
     const results = await Promise.all(index.map((id) => kvs.get<RuleSet>(storeKey.ruleSet(id))));
-    return results.filter((item): item is RuleSet => Boolean(item)).map(clone);
+    return results
+      .filter((item): item is RuleSet => Boolean(item))
+      .map(normalizeRuleSet)
+      .map(clone);
   }
 
   async listFieldMappings(): Promise<FieldMapping[]> {

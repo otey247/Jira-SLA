@@ -36,9 +36,16 @@ button:disabled {
 }
 
 .shell {
+  width: 100%;
   max-width: 1280px;
   margin: 0 auto;
   padding: 1.5rem;
+  box-sizing: border-box;
+}
+
+.shell-wide {
+  max-width: none;
+  padding-inline: clamp(1rem, 2vw, 2rem);
 }
 
 .hero,
@@ -77,6 +84,10 @@ button:disabled {
 
 .grid.two-up {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.shell-wide .grid.two-up {
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
 }
 
 .full-span {
@@ -257,6 +268,17 @@ select {
 .warning-card {
   border: 1px solid #ffd79d;
   background: #fff7e6;
+}
+
+@media (max-width: 720px) {
+  .shell,
+  .shell-wide {
+    padding: 1rem;
+  }
+
+  .shell-wide .grid.two-up {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .warning-list {

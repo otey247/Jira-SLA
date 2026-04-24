@@ -16,7 +16,7 @@ type Tab =
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
-  { id: 'explorer', label: 'Issue Explorer' },
+  { id: 'explorer', label: 'Tracked Issues' },
   { id: 'assignee', label: 'Assignee Analytics' },
   { id: 'rulesets', label: 'Rule Sets' },
   { id: 'calendars', label: 'Calendars' },

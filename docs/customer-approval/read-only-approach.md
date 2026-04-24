@@ -58,7 +58,7 @@ all Jira API usage and confirmed the deployed app behavior is read-only.
 2. Normalize Jira field changes into deterministic SLA events.
 3. Recompute segments and summary metrics inside the app.
 4. Store the derived results in Forge storage.
-5. Serve dashboards, issue detail, and explanations from the stored derived data.
+5. Serve dashboards, SLA breakdowns, and explanations from the stored derived data.
 
 ## Customer review notes
 
